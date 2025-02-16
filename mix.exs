@@ -1,7 +1,7 @@
 defmodule ExPgQuery.MixProject do
   use Mix.Project
 
-  @version "0.1.0-dev"
+  @version "0.1.0"
 
   def project do
     [
@@ -24,11 +24,14 @@ defmodule ExPgQuery.MixProject do
         "test.watch": :test
       ],
       compilers: [:elixir_make] ++ Mix.compilers(),
+      make_executable: "make",
+      make_makefile: "Makefile",
       make_precompiler: {:nif, CCPrecompiler},
       make_precompiler_url:
         "https://github.com/hlindset/ex_pg_query/releases/download/v#{@version}/@{artefact_filename}",
-      make_precompiler_filename: "ex_pg_query",
+      make_precompiler_priv_paths: ["ex_pg_query.*"],
       make_precompiler_nif_versions: [versions: ["2.16", "2.17"]],
+      make_precompiler_unavailable_target: :compile,
       # Docs
       name: "ExPgQuery",
       source_url: "https://github.com/hlindset/ex_pg_query",
@@ -77,9 +80,9 @@ defmodule ExPgQuery.MixProject do
     [
       {:protox, "~> 1.7"},
       {:elixir_make, "~> 0.9", runtime: false},
+      {:cc_precompiler, "~> 0.1.10", runtime: false, github: "cocoa-xu/cc_precompiler"},
       {:ex_doc, "~> 0.36", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:cc_precompiler, "~> 0.1.10", runtime: false, github: "cocoa-xu/cc_precompiler"},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:junit_formatter, "~> 3.4", only: :test}
