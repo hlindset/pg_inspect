@@ -7,22 +7,12 @@ defmodule ExPgQuery.MixProject do
     [
       app: :ex_pg_query,
       version: @version,
-      elixir: "~> 1.16",
+      elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
       description: description(),
       test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test,
-        "coveralls.json": :test,
-        "coveralls.lcov": :test,
-        "coveralls.cobertura": :test,
-        "test.watch": :test
-      ],
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_executable: "make",
       make_makefile: "Makefile",
@@ -75,15 +65,34 @@ defmodule ExPgQuery.MixProject do
     ]
   end
 
+  defp preferred_cli_env do
+    %{
+      coveralls: :test,
+      "coveralls.detail": :test,
+      "coveralls.post": :test,
+      "coveralls.html": :test,
+      "coveralls.json": :test,
+      "coveralls.lcov": :test,
+      "coveralls.cobertura": :test,
+      "test.watch": :test
+    }
+  end
+
+  def cli do
+    [
+      preferred_envs: preferred_cli_env()
+    ]
+  end
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:protox, "~> 1.7"},
+      {:protox, "~> 2.0"},
       {:elixir_make, "~> 0.9", runtime: false},
       {:cc_precompiler, "~> 0.1.10", runtime: false, github: "cocoa-xu/cc_precompiler"},
-      {:ex_doc, "~> 0.36", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:mix_test_watch, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:junit_formatter, "~> 3.4", only: :test}
     ]

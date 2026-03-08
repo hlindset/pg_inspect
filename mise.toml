@@ -1,0 +1,11 @@
+[tools]
+elixir = "1.20.0-rc.2-otp-28"
+ast-grep = "latest"
+bat = "latest"
+eza = "latest"
+fd = "latest"
+fzf = "latest"
+jq = "latest"
+rg = "latest"
+sd = "latest"
+yq = "latest"
