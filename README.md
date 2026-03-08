@@ -1,6 +1,6 @@
 # PgInspect
 
-Elixir library with a C NIF for parsing PostgreSQL queries. It uses
+Elixir library with a Zigler-backed NIF for parsing PostgreSQL queries. It uses
 [pganalyze/libpg_query](https://github.com/pganalyze/libpg_query) for parsing,
 deparsing, fingerprinting, and normalization.
 
@@ -15,6 +15,15 @@ deparsing, fingerprinting, and normalization.
 ## Installation
 
 Not published to Hex yet.
+
+Tagged releases publish precompiled Zigler artifacts for the supported
+`mix zig.precompile` target matrix on Zigler 0.15.2 (Linux, macOS, and
+FreeBSD variants). A normal git checkout, like this repository, compiles from
+source so local development still works before a release is cut.
+
+Windows precompilation is not wired into this repository yet because Zigler's
+`windows-msvc` targets require MSVC and Windows SDK environment variables in
+CI.
 
 ## Usage
 

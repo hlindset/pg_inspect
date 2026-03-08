@@ -28,8 +28,10 @@ pg_inspect-*.tar
 .DS_Store
 
 priv/pg_inspect.so
-
 checksum.exs
 
 libpg_query/**/*.o
 libpg_query/**/*.a
+lib/pg_inspect/native/.*.zig
+lib/pg_inspect/native/lib/
+priv/lib/

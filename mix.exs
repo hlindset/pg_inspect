@@ -14,15 +14,6 @@ defmodule PgInspect.MixProject do
       package: package(),
       description: description(),
       test_coverage: [tool: ExCoveralls],
-      compilers: [:elixir_make] ++ Mix.compilers(),
-      make_executable: "make",
-      make_makefile: "Makefile",
-      make_precompiler: {:nif, CCPrecompiler},
-      make_precompiler_url:
-        "https://github.com/hlindset/pg_inspect/releases/download/v#{@version}/@{artefact_filename}",
-      make_precompiler_priv_paths: ["pg_inspect.*"],
-      make_precompiler_nif_versions: [versions: ["2.16", "2.17"]],
-      make_precompiler_unavailable_target: :compile,
       # Docs
       name: "PgInspect",
       source_url: "https://github.com/hlindset/pg_inspect",
@@ -39,14 +30,14 @@ defmodule PgInspect.MixProject do
       links: %{
         "GitHub" => "https://github.com/hlindset/pg_inspect"
       },
-      files: ~w(lib priv .formatter.exs mix.exs README* LICENSE*
-        CHANGELOG* src checksum.exs)
+      files: ~w(lib libpg_query .formatter.exs mix.exs README* LICENSE*
+        CHANGELOG*)
     ]
   end
 
   defp description do
     """
-    Elixir library with a C NIF (based on libpg_query) for parsing,
+    Elixir library with a Zigler NIF (backed by libpg_query) for parsing,
     fingerprinting, normalizing and truncating PostgreSQL queries.
     """
   end
@@ -92,8 +83,7 @@ defmodule PgInspect.MixProject do
   defp deps do
     [
       {:protox, "~> 2.0"},
-      {:elixir_make, "~> 0.9", runtime: false},
-      {:cc_precompiler, "~> 0.1.10", runtime: false, github: "cocoa-xu/cc_precompiler"},
+      {:zigler, "~> 0.15.2", runtime: false},
       {:benchee, "~> 1.3", only: :dev, runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

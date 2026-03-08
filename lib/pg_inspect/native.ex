@@ -7,20 +7,6 @@ defmodule PgInspect.Native do
   Implemented Functions) when the module is initialized.
   """
 
-  @on_load :init
-
-  @doc false
-  def init do
-    :ok = load_nif()
-  end
-
-  defp load_nif do
-    :pg_inspect
-    |> Application.app_dir("priv/pg_inspect")
-    |> String.to_charlist()
-    |> :erlang.load_nif(0)
-  end
-
   @doc """
   Parses a SQL query into a Protocol Buffer representation.
 
@@ -43,7 +29,7 @@ defmodule PgInspect.Native do
       iex> {:ok, _result} = Protox.decode(bytes, PgQuery.ParseResult)
 
   """
-  def parse_protobuf(_), do: exit(:nif_library_not_loaded)
+  defdelegate parse_protobuf(query), to: PgInspect.Native.Binding
 
   @doc """
   Converts a Protocol Buffer AST back into a SQL query string.
@@ -64,7 +50,7 @@ defmodule PgInspect.Native do
       {:ok, "SELECT * FROM users"}
 
   """
-  def deparse_protobuf(_), do: exit(:nif_library_not_loaded)
+  defdelegate deparse_protobuf(protobuf), to: PgInspect.Native.Binding
 
   @doc """
   Generates a fingerprint string that identifies structurally similar queries.
@@ -91,7 +77,7 @@ defmodule PgInspect.Native do
       {:ok, %{fingerprint: 11595314936444286341, fingerprint_str: "a0ead580058af585"}}
 
   """
-  def fingerprint(_), do: exit(:nif_library_not_loaded)
+  defdelegate fingerprint(query), to: PgInspect.Native.Binding
 
   @doc """
   Performs lexical scanning of a SQL query into tokens.
@@ -115,7 +101,7 @@ defmodule PgInspect.Native do
       iex> {:ok, _result} = Protox.decode(bytes, PgQuery.ScanResult)
 
   """
-  def scan(_), do: exit(:nif_library_not_loaded)
+  defdelegate scan(query), to: PgInspect.Native.Binding
 
   @doc """
   Normalizes a SQL query by replacing literal values with placeholders.
@@ -147,5 +133,5 @@ defmodule PgInspect.Native do
       {:ok, "CREATE ROLE postgres PASSWORD $1"}
 
   """
-  def normalize(_), do: exit(:nif_library_not_loaded)
+  defdelegate normalize(query), to: PgInspect.Native.Binding
 end
