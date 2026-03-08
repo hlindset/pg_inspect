@@ -1,33 +1,53 @@
-defmodule ExPgQuery.Analysis do
+defmodule ExPgQuery.Internal.Analysis do
   @moduledoc false
 
-  alias ExPgQuery.AST
-  alias ExPgQuery.AST.Analysis, as: Scope
-  alias ExPgQuery.AST.Visit
-  alias ExPgQuery.ParseResult
+  alias ExPgQuery.AnalysisResult
+  alias ExPgQuery.Internal.AST
+  alias ExPgQuery.Internal.AST.Analysis, as: Scope
+  alias ExPgQuery.Internal.AST.Visit
 
-  @spec analyze(PgQuery.ParseResult.t()) :: ParseResult.t()
-  def analyze(%PgQuery.ParseResult{} = tree) do
+  @type collector :: (Visit.t(), AnalysisResult.t() -> AnalysisResult.t())
+
+  @spec analyze(PgQuery.ParseResult.t(), [collector()]) :: AnalysisResult.t()
+  def analyze(%PgQuery.ParseResult{} = tree, collectors \\ collectors()) do
     tree
-    |> AST.reduce(%ParseResult{tree: tree}, &collect_visit/2)
-    |> uniq_result()
+    |> AST.reduce(%AnalysisResult{raw_ast: tree}, fn %Visit{} = visit,
+                                                     %AnalysisResult{} = result ->
+      Enum.reduce(collectors, result, fn collector, acc -> collector.(visit, acc) end)
+    end)
+    |> finalize_result()
   end
 
-  defp collect_visit(%Visit{} = visit, %ParseResult{} = result) do
-    result
-    |> collect_scope_metadata(visit)
-    |> collect_drop_objects(visit)
-    |> collect_filter_columns(visit)
-    |> collect_tables(visit)
-    |> collect_functions(visit)
+  @spec collectors() :: [collector()]
+  def collectors do
+    [
+      &collect_statement_types/2,
+      &collect_scope_metadata/2,
+      &collect_drop_objects/2,
+      &collect_filter_columns/2,
+      &collect_tables/2,
+      &collect_functions/2,
+      &collect_parameter_references/2
+    ]
   end
+
+  defp collect_statement_types(
+         %Visit{
+           node: %PgQuery.RawStmt{stmt: %PgQuery.Node{node: {statement_type, _}}}
+         },
+         %AnalysisResult{} = result
+       ) do
+    %AnalysisResult{result | statement_types: result.statement_types ++ [statement_type]}
+  end
+
+  defp collect_statement_types(%Visit{}, %AnalysisResult{} = result), do: result
 
   defp collect_scope_metadata(
-         %ParseResult{} = result,
          %Visit{
            analysis: %Scope{} = scope,
            node: node
-         }
+         },
+         %AnalysisResult{} = result
        )
        when is_struct(node, PgQuery.SelectStmt) or
               is_struct(node, PgQuery.UpdateStmt) or
@@ -37,21 +57,21 @@ defmodule ExPgQuery.Analysis do
       |> Map.reject(fn {_alias, %{relation: relation}} -> relation in scope.cte_names end)
       |> Map.values()
 
-    %ParseResult{
+    %AnalysisResult{
       result
       | table_aliases: result.table_aliases ++ aliases,
         cte_names: result.cte_names ++ scope.cte_names
     }
   end
 
-  defp collect_scope_metadata(%ParseResult{} = result, _visit), do: result
+  defp collect_scope_metadata(%Visit{}, %AnalysisResult{} = result), do: result
 
   defp collect_drop_objects(
-         %ParseResult{} = result,
          %Visit{
            analysis: %Scope{statement: statement},
            node: %PgQuery.DropStmt{remove_type: remove_type} = node
-         }
+         },
+         %AnalysisResult{} = result
        )
        when remove_type in [
               :OBJECT_TABLE,
@@ -67,15 +87,15 @@ defmodule ExPgQuery.Analysis do
     end)
   end
 
-  defp collect_drop_objects(%ParseResult{} = result, _visit), do: result
+  defp collect_drop_objects(%Visit{}, %AnalysisResult{} = result), do: result
 
-  defp collect_drop_object(%ParseResult{} = result, object, remove_type, statement)
+  defp collect_drop_object(%AnalysisResult{} = result, object, remove_type, statement)
        when remove_type in [:OBJECT_TABLE, :OBJECT_VIEW] do
     table = %{name: Enum.join(object, "."), type: statement}
-    %ParseResult{result | tables: [table | result.tables]}
+    %AnalysisResult{result | tables: [table | result.tables]}
   end
 
-  defp collect_drop_object(%ParseResult{} = result, object, remove_type, statement)
+  defp collect_drop_object(%AnalysisResult{} = result, object, remove_type, statement)
        when remove_type in [:OBJECT_RULE, :OBJECT_TRIGGER] do
     name =
       object
@@ -83,31 +103,30 @@ defmodule ExPgQuery.Analysis do
       |> Enum.join(".")
 
     table = %{name: name, type: statement}
-    %ParseResult{result | tables: [table | result.tables]}
+    %AnalysisResult{result | tables: [table | result.tables]}
   end
 
-  defp collect_drop_object(%ParseResult{} = result, object, :OBJECT_FUNCTION, statement) do
+  defp collect_drop_object(%AnalysisResult{} = result, object, :OBJECT_FUNCTION, statement) do
     function = %{name: Enum.join(object, "."), type: statement}
-    %ParseResult{result | functions: [function | result.functions]}
+    %AnalysisResult{result | functions: [function | result.functions]}
   end
 
   defp collect_filter_columns(
-         %ParseResult{} = result,
          %Visit{
            analysis: %Scope{aliases: aliases, in_condition?: true},
            node: %PgQuery.ColumnRef{} = node
-         }
+         },
+         %AnalysisResult{} = result
        ) do
     case filter_column(node, aliases) do
       nil -> result
-      field -> %ParseResult{result | filter_columns: [field | result.filter_columns]}
+      field -> %AnalysisResult{result | filter_columns: [field | result.filter_columns]}
     end
   end
 
-  defp collect_filter_columns(%ParseResult{} = result, _visit), do: result
+  defp collect_filter_columns(%Visit{}, %AnalysisResult{} = result), do: result
 
   defp collect_tables(
-         %ParseResult{} = result,
          %Visit{
            analysis: %Scope{
              statement: statement,
@@ -117,7 +136,8 @@ defmodule ExPgQuery.Analysis do
              in_from_clause?: true
            },
            node: %PgQuery.RangeVar{} = node
-         }
+         },
+         %AnalysisResult{} = result
        ) do
     table_name = table_name(node)
     cte_reference? = table_name in cte_names or current_cte == table_name
@@ -140,26 +160,25 @@ defmodule ExPgQuery.Analysis do
           relpersistence: node.relpersistence
         }
 
-        %ParseResult{result | tables: [table | result.tables]}
+        %AnalysisResult{result | tables: [table | result.tables]}
     end
   end
 
-  defp collect_tables(%ParseResult{} = result, _visit), do: result
+  defp collect_tables(%Visit{}, %AnalysisResult{} = result), do: result
 
   defp collect_functions(
-         %ParseResult{} = result,
          %Visit{
            analysis: %Scope{statement: statement},
            node: node
-         }
+         },
+         %AnalysisResult{} = result
        )
        when is_struct(node, PgQuery.FuncCall) or is_struct(node, PgQuery.CreateFunctionStmt) do
     function = %{name: function_name(node.funcname), type: statement}
-    %ParseResult{result | functions: [function | result.functions]}
+    %AnalysisResult{result | functions: [function | result.functions]}
   end
 
   defp collect_functions(
-         %ParseResult{} = result,
          %Visit{
            analysis: %Scope{statement: statement},
            node: %PgQuery.RenameStmt{
@@ -173,14 +192,70 @@ defmodule ExPgQuery.Analysis do
                   }}
              }
            }
-         }
+         },
+         %AnalysisResult{} = result
        ) do
     original_name = function_name(objname)
     functions = [%{name: original_name, type: statement}, %{name: newname, type: statement}]
-    %ParseResult{result | functions: functions ++ result.functions}
+    %AnalysisResult{result | functions: functions ++ result.functions}
   end
 
-  defp collect_functions(%ParseResult{} = result, _visit), do: result
+  defp collect_functions(%Visit{}, %AnalysisResult{} = result), do: result
+
+  defp collect_parameter_references(
+         %Visit{
+           node: %PgQuery.ParamRef{} = node,
+           path: path
+         },
+         %AnalysisResult{} = result
+       ) do
+    case Enum.take(path, -3) do
+      [:type_cast, :arg, :param_ref] ->
+        result
+
+      _ ->
+        ref = %{location: node.location, length: param_ref_length(node)}
+        %AnalysisResult{result | parameter_references: [ref | result.parameter_references]}
+    end
+  end
+
+  defp collect_parameter_references(
+         %Visit{
+           node: %PgQuery.TypeCast{
+             arg: %PgQuery.Node{
+               node: {:param_ref, param_ref_node}
+             },
+             type_name: %PgQuery.TypeName{} = type_name_node
+           }
+         },
+         %AnalysisResult{} = result
+       ) do
+    length = param_ref_length(param_ref_node)
+    param_loc = param_ref_node.location
+    type_loc = type_name_node.location
+
+    {length, location} =
+      cond do
+        param_loc == -1 ->
+          {length, type_name_node.location}
+
+        type_loc < param_loc ->
+          {length + param_loc - type_loc, type_name_node.location}
+
+        true ->
+          {length, param_loc}
+      end
+
+    ref = %{
+      location: location,
+      length: length,
+      typename: Enum.map(type_name_node.names, &string_value/1)
+    }
+
+    %AnalysisResult{result | parameter_references: [ref | result.parameter_references]}
+  end
+
+  defp collect_parameter_references(%Visit{}, %AnalysisResult{} = result), do: result
 
   defp filter_column(%PgQuery.ColumnRef{fields: fields}, aliases) do
     names =
@@ -234,14 +309,21 @@ defmodule ExPgQuery.Analysis do
   defp alias_to_name(%{relation: relation, schema: nil}), do: relation
   defp alias_to_name(%{relation: relation, schema: schema}), do: "#{schema}.#{relation}"
 
-  defp uniq_result(%ParseResult{} = result) do
-    %ParseResult{
+  defp param_ref_length(%PgQuery.ParamRef{number: 0}), do: 1
+  defp param_ref_length(%PgQuery.ParamRef{number: number}), do: String.length("$#{number}")
+
+  defp finalize_result(%AnalysisResult{} = result) do
+    %AnalysisResult{
       result
       | tables: Enum.uniq(result.tables),
         cte_names: Enum.uniq(result.cte_names),
         functions: Enum.uniq(result.functions),
         table_aliases: Enum.uniq(result.table_aliases),
-        filter_columns: Enum.uniq(result.filter_columns)
+        filter_columns: Enum.uniq(result.filter_columns),
+        parameter_references:
+          result.parameter_references
+          |> Enum.uniq()
+          |> Enum.sort_by(& &1.location)
     }
   end
 

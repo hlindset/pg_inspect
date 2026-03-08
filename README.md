@@ -1,21 +1,16 @@
 # ExPgQuery
 
-Elixir library with a C NIF for parsing PostgreSQL queries. Very much inspired by
-[pganalyze/pg_query](https://github.com/pganalyze/pg_query), and utilizes
-[pganalyze/libpg_query](https://github.com/pganalyze/libpg_query) for turning queries
-into a parsetree, normalizing and fingerprinting.
+Elixir library with a C NIF for parsing PostgreSQL queries. It uses
+[pganalyze/libpg_query](https://github.com/pganalyze/libpg_query) for parsing,
+deparsing, fingerprinting, and normalization.
 
-### Features
+## Features
 
-- Extract SQL query information:
-  - Referenced tables
-  - Common table expressions
-  - Function calls
-  - Columns used in filter conditions (`WHERE`, `JOIN ... ON`, etc.)
-- Query manipulation:
-  - Smart query truncation
-  - Query fingerprinting for identifying structurally equivalent queries
-  - Query normalization (replacing literals with placeholders)
+- Raw PostgreSQL AST parse/deparse
+- High-level query analysis
+- Query truncation
+- Query normalization
+- Query fingerprinting
 
 ## Installation
 
@@ -23,86 +18,53 @@ Not published to Hex yet.
 
 ## Usage
 
-### Basic Parsing Example
+### Raw AST I/O
 
 ```elixir
-# Parse a query and analyze its structure
-iex> query = "SELECT u.name FROM users u WHERE u.age > 21"
-iex> {:ok, result} = ExPgQuery.parse(query)
+iex> {:ok, ast} = ExPgQuery.parse("SELECT * FROM users WHERE id = $1")
+iex> match?(%PgQuery.ParseResult{}, ast)
+true
 
-# Get referenced tables
-iex> ExPgQuery.tables(result)
-["users"]
-
-# Get table aliases
-iex> ExPgQuery.table_aliases(result)
-[%{alias: "u", relation: "users", location: 19, schema: nil}]
-
-# Get filter columns
-iex> ExPgQuery.filter_columns(result)
-[{"users", "age"}]
-
-# Get statement types
-iex> ExPgQuery.statement_types(result)
-[:select_stmt]
+iex> ExPgQuery.deparse(ast)
+{:ok, "SELECT * FROM users WHERE id = $1"}
 ```
 
-### Extract Table References
-
-Extract table references by operation type.
+### Query Analysis
 
 ```elixir
-iex> {:ok, result} = ExPgQuery.parse("""
-...>   SELECT * FROM users;
-...>   CREATE TABLE posts (id int);
-...>   INSERT INTO comments (text) VALUES ('hello');
-...> """)
+iex> {:ok, analyzed} =
+...>   ExPgQuery.analyze("""
+...>   WITH recent_posts AS (SELECT * FROM posts WHERE author_id = $1)
+...>   SELECT count(*) FROM recent_posts rp WHERE rp.inserted_at > $2::timestamptz
+...>   """)
 
-iex> ExPgQuery.select_tables(result)
-["users"]
-
-iex> ExPgQuery.ddl_tables(result)
+iex> ExPgQuery.tables(analyzed)
 ["posts"]
 
-iex> ExPgQuery.dml_tables(result)
-["comments"]
+iex> ExPgQuery.cte_names(analyzed)
+["recent_posts"]
 
-# Even within the same query
-iex> {:ok, result} = ExPgQuery.parse("""
-...>   SELECT * INTO films_recent
-...>   FROM films
-...> """)
+iex> ExPgQuery.functions(analyzed)
+["count"]
 
-iex> ExPgQuery.select_tables(result)
-["films"]
+iex> ExPgQuery.filter_columns(analyzed)
+[{"posts", "author_id"}, {"recent_posts", "inserted_at"}]
 
-iex> ExPgQuery.ddl_tables(result)
-["films_recent"]
+iex> ExPgQuery.parameter_references(analyzed)
+[
+  %{location: 56, length: 2},
+  %{location: 111, length: 2, typename: ["timestamptz"]}
+]
 ```
 
-### Extract Function References
-
-Extract function references by operation type.
+### Truncation
 
 ```elixir
-iex> {:ok, result} = ExPgQuery.parse("""
-...>   SELECT count(*), my_func(col) FROM users;
-...>   CREATE FUNCTION add(a int, b int) RETURNS int;
-...> """)
-
-iex> ExPgQuery.functions(result)
-["add", "my_func", "count"]
-
-iex> ExPgQuery.call_functions(result)
-["my_func", "count"]
-
-iex> ExPgQuery.ddl_functions(result)
-["add"]
+iex> ExPgQuery.truncate("SELECT id, name, email FROM users WHERE active = true", 32)
+{:ok, "SELECT ... FROM users WHERE ..."}
 ```
 
-### Query Normalization
-
-Normalize queries by replacing literals with placeholders.
+### Normalization
 
 ```elixir
 iex> ExPgQuery.Normalize.normalize("SELECT * FROM users WHERE id = 123")
@@ -110,8 +72,6 @@ iex> ExPgQuery.Normalize.normalize("SELECT * FROM users WHERE id = 123")
 ```
 
 ### Fingerprinting
-
-Generate fingerprints for queries to identify structurally equivalent queries.
 
 ```elixir
 iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 123")
@@ -121,22 +81,12 @@ iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 456")
 {:ok, "a0ead580058af585"}
 ```
 
-### Query Truncation
-
-Intelligently truncate long queries.
-
-```elixir
-iex> query = "SELECT very, many, columns FROM a_table WHERE x > 1"
-iex> {:ok, tree} = ExPgQuery.Protobuf.from_sql(query)
-iex> ExPgQuery.Truncator.truncate(tree, 34)
-{:ok, "SELECT ... FROM a_table WHERE ..."}
-```
-
 ## License
 
 This library is distributed under the terms of the [MIT license](LICENSE).
 
-The libpg_query snapshot is distributed under the BSD 3-Clause license. See [libpg_query/LICENSE](libpg_query/LICENSE).
+The libpg_query snapshot is distributed under the BSD 3-Clause license. See
+[libpg_query/LICENSE](libpg_query/LICENSE).
 
 ## Contributing
 

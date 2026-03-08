@@ -1,9 +1,9 @@
-defmodule ExPgQuery.ASTTest do
+defmodule ExPgQuery.Internal.ASTTest do
   use ExUnit.Case
 
-  alias ExPgQuery.AST
-  alias ExPgQuery.AST.Analysis
-  alias ExPgQuery.AST.Visit
+  alias ExPgQuery.Internal.AST
+  alias ExPgQuery.Internal.AST.Analysis
+  alias ExPgQuery.Internal.AST.Visit
   alias ExPgQuery.Protobuf
 
   describe "reduce/4" do

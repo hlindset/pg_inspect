@@ -1,13 +1,8 @@
-defmodule ExPgQuery.Truncator do
-  @moduledoc """
-  Provides functionality to intelligently truncate SQL queries.
+defmodule ExPgQuery.Internal.Truncator do
+  @moduledoc false
 
-  Falls back to deterministic string truncation if smart truncation is not
-  sufficient.
-  """
-
-  alias ExPgQuery.AST
-  alias ExPgQuery.AST.Visit
+  alias ExPgQuery.Internal.AST
+  alias ExPgQuery.Internal.AST.Visit
   alias ExPgQuery.Protobuf
 
   defmodule PossibleTruncation do
@@ -44,9 +39,6 @@ defmodule ExPgQuery.Truncator do
     }
   ]
 
-  @doc """
-  Truncates a SQL query to be below the specified length.
-  """
   def truncate(%PgQuery.ParseResult{} = tree, max_length) when is_integer(max_length) do
     with {:ok, {length, output}} <- query_length(tree) do
       if length <= max_length do
@@ -57,9 +49,6 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  @doc """
-  Same as `truncate/2` but raises on error.
-  """
   def truncate!(tree, max_length) do
     case truncate(tree, max_length) do
       {:ok, output} -> output
@@ -283,8 +272,8 @@ defmodule ExPgQuery.Truncator do
   defp group_clause_length(node) do
     with {:ok, query} <-
            Protobuf.stmt_to_sql(%PgQuery.SelectStmt{
-             op: :SETOP_NONE,
-             group_clause: node
+             group_clause: node,
+             op: :SETOP_NONE
            }) do
       {:ok,
        query

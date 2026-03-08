@@ -1,58 +1,42 @@
-defmodule ExPgQuery.ParamRefsTest do
+defmodule ExPgQuery.ParameterReferencesTest do
   use ExUnit.Case
 
-  alias ExPgQuery.ParamRefs
-  alias ExPgQuery.Protobuf
+  describe "parameter_references/1" do
+    test "collects plain numbered parameters" do
+      {:ok, analyzed} = ExPgQuery.analyze("SELECT * FROM x WHERE y = $1 AND z = $2")
 
-  doctest ExPgQuery.ParamRefs
-
-  describe "param_refs" do
-    test "simple query" do
-      query = "SELECT * FROM x WHERE y = $1 AND z = $2"
-      {:ok, tree} = Protobuf.from_sql(query)
-      param_refs = ParamRefs.param_refs(tree)
-      assert param_refs == [%{location: 26, length: 2}, %{location: 37, length: 2}]
-    end
-
-    test "simple query with :: typecast" do
-      query = "SELECT * FROM x WHERE y = $1 AND z = $2::timestamptz"
-      {:ok, tree} = Protobuf.from_sql(query)
-      param_refs = ParamRefs.param_refs(tree)
-
-      assert param_refs == [
+      assert ExPgQuery.parameter_references(analyzed) == [
                %{location: 26, length: 2},
-               %{location: 37, length: 2, typename: ["timestamptz"]}
+               %{location: 37, length: 2}
              ]
     end
 
-    test "queries with typecasts" do
-      query = "SELECT * FROM x WHERE y = $1::text AND z < now() - INTERVAL $2"
-      {:ok, tree} = Protobuf.from_sql(query)
-      param_refs = ParamRefs.param_refs(tree)
+    test "collects question-mark placeholders" do
+      {:ok, analyzed} = ExPgQuery.analyze("SELECT * FROM x WHERE y = ? AND z = ?")
 
-      assert param_refs == [
-               %{
-                 location: 26,
-                 length: 2,
-                 typename: ["text"]
-               },
-               %{
-                 location: 51,
-                 length: 11,
-                 typename: ["pg_catalog", "interval"]
-               }
+      assert ExPgQuery.parameter_references(analyzed) == [
+               %{location: 26, length: 1},
+               %{location: 36, length: 1}
              ]
     end
 
-    test "param refs with different lengths" do
-      query = "SELECT * FROM a WHERE x = $1 AND y = $12 AND z = $255"
-      {:ok, tree} = Protobuf.from_sql(query)
-      param_refs = ParamRefs.param_refs(tree)
+    test "collects explicit casts" do
+      {:ok, analyzed} =
+        ExPgQuery.analyze("SELECT * FROM x WHERE y = $1::text AND z = $2::timestamptz")
 
-      assert param_refs == [
-               %{location: 26, length: 2},
-               %{location: 37, length: 3},
-               %{location: 49, length: 4}
+      assert ExPgQuery.parameter_references(analyzed) == [
+               %{location: 26, length: 2, typename: ["text"]},
+               %{location: 43, length: 2, typename: ["timestamptz"]}
+             ]
+    end
+
+    test "uses type-name location for interval casts" do
+      {:ok, analyzed} =
+        ExPgQuery.analyze("SELECT * FROM x WHERE y = $1::text AND z < now() - INTERVAL $2")
+
+      assert ExPgQuery.parameter_references(analyzed) == [
+               %{location: 26, length: 2, typename: ["text"]},
+               %{location: 51, length: 11, typename: ["pg_catalog", "interval"]}
              ]
     end
   end

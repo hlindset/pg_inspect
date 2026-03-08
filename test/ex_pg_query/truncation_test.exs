@@ -1,58 +1,43 @@
-defmodule ExPgQuery.TruncatorTest do
+defmodule ExPgQuery.TruncationTest do
   use ExUnit.Case
-
-  alias ExPgQuery.Protobuf
-  alias ExPgQuery.Truncator
-
-  doctest ExPgQuery.Truncator
 
   describe "truncate/2" do
     test "omits target list" do
       query = "SELECT a, b, c, d, e, f FROM xyz WHERE a = b"
-      expected = "SELECT ... FROM xyz WHERE a = b"
-      assert_truncate_eq(query, 40, expected)
+      assert_truncate_eq(query, 40, "SELECT ... FROM xyz WHERE a = b")
     end
 
     test "omits with part of CTEs" do
       query = "WITH x AS (SELECT * FROM y) SELECT * FROM x"
-      expected = "WITH x AS (...) SELECT * FROM x"
-      assert_truncate_eq(query, 40, expected)
+      assert_truncate_eq(query, 40, "WITH x AS (...) SELECT * FROM x")
     end
 
     test "omits where clause" do
       query = "SELECT * FROM z WHERE a = b AND x = y"
-      expected = "SELECT * FROM z WHERE ..."
-      assert_truncate_eq(query, 30, expected)
+      assert_truncate_eq(query, 30, "SELECT * FROM z WHERE ...")
     end
 
     test "omits INSERT field list" do
       query = "INSERT INTO \"x\" (a, b, c, d, e, f) VALUES ($1, $2, $3, $4, $5, $6)"
-      expected = "INSERT INTO x (...) VALUES (...)"
-      assert_truncate_eq(query, 32, expected)
+      assert_truncate_eq(query, 32, "INSERT INTO x (...) VALUES (...)")
     end
 
     test "omits comments" do
       query = "SELECT $1 /* application:test */"
-      expected = "SELECT $1"
-      assert_truncate_eq(query, 100, expected)
+      assert_truncate_eq(query, 100, "SELECT $1")
     end
 
     test "performs a simple truncation if necessary" do
-      query = "SELECT * FROM t"
-      expected = "SELECT ..."
-      assert_truncate_eq(query, 10, expected)
+      assert_truncate_eq("SELECT * FROM t", 10, "SELECT ...")
     end
 
-    test "works problematic cases" do
+    test "handles problematic cases" do
       query = "SELECT CASE WHEN $2.typtype = $3 THEN $2.typtypmod ELSE $1.atttypmod END"
-      expected = "SELECT ..."
-      assert_truncate_eq(query, 50, expected)
+      assert_truncate_eq(query, 50, "SELECT ...")
     end
 
     test "handles UPDATE target list" do
-      query = "UPDATE x SET a = 1, c = 2, e = 'str'"
-      expected = "UPDATE x SET ... = ..."
-      assert_truncate_eq(query, 30, expected)
+      assert_truncate_eq("UPDATE x SET a = 1, c = 2, e = 'str'", 30, "UPDATE x SET ... = ...")
     end
 
     test "handles ON CONFLICT target list" do
@@ -80,9 +65,7 @@ defmodule ExPgQuery.TruncatorTest do
 
     test "handles GRANT access privileges" do
       query = "GRANT SELECT (abc, def, ghj) ON TABLE t1 TO r1"
-      expected = "GRANT select (abc, def, ghj) ON ..."
-
-      assert_truncate_eq(query, 35, expected)
+      assert_truncate_eq(query, 35, "GRANT select (abc, def, ghj) ON ...")
     end
 
     test "leaves short queries unchanged" do
@@ -146,11 +129,10 @@ defmodule ExPgQuery.TruncatorTest do
       AND email LIKE '%@example.com'
       """
 
-      # Should truncate the longer part (WHERE clause) first
       assert_truncate_eq(query, 50, "SELECT id, name, email, phone FROM users WHERE ...")
     end
 
-    test "falls back to hard truncation when smart truncation isn't enough" do
+    test "falls back to hard truncation when smart truncation is not enough" do
       query = "SELECT * FROM really_really_really_really_long_table_name"
       assert_truncate_eq(query, 20, "SELECT * FROM rea...")
     end
@@ -176,14 +158,12 @@ defmodule ExPgQuery.TruncatorTest do
   end
 
   defp assert_truncate_eq(query, truncate_length, expected) do
-    {:ok, parse_result} = Protobuf.from_sql(query)
-    {:ok, result} = Truncator.truncate(parse_result, truncate_length)
+    assert {:ok, result} = ExPgQuery.truncate(query, truncate_length)
     assert result == expected
   end
 
   defp assert_truncate_length(query, truncate_length, expected) do
-    {:ok, parse_result} = Protobuf.from_sql(query)
-    {:ok, result} = Truncator.truncate(parse_result, truncate_length)
+    assert {:ok, result} = ExPgQuery.truncate(query, truncate_length)
     assert String.length(result) == expected
   end
 end

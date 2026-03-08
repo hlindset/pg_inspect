@@ -3,9 +3,9 @@ defmodule ExPgQueryTest do
 
   doctest ExPgQuery
 
-  describe "parse/1 for SELECT statements" do
+  describe "analyze/1 for SELECT statements" do
     test "parses simple SELECT query" do
-      {:ok, result} = ExPgQuery.parse("SELECT 1")
+      {:ok, result} = ExPgQuery.analyze("SELECT 1")
 
       assert_tables_eq(result, [])
       assert_cte_names_eq(result, [])
@@ -14,17 +14,17 @@ defmodule ExPgQueryTest do
 
     test "handles parse errors" do
       {:error, %{message: message}} =
-        ExPgQuery.parse("CREATE RANDOM ix_test ON contacts.person;")
+        ExPgQuery.analyze("CREATE RANDOM ix_test ON contacts.person;")
 
       assert message =~ "syntax error at or near \"RANDOM\""
 
-      {:error, %{message: message}} = ExPgQuery.parse("SELECT 'ERR")
+      {:error, %{message: message}} = ExPgQuery.analyze("SELECT 'ERR")
       assert message =~ "unterminated quoted string"
     end
 
     test "parses query with multiple tables" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT memory_total_bytes, memory_free_bytes
           FROM snapshots s
           JOIN system_snapshots ON (snapshot_id = s.id)
@@ -37,7 +37,7 @@ defmodule ExPgQueryTest do
     end
 
     test "parses empty queries" do
-      {:ok, result} = ExPgQuery.parse("-- nothing")
+      {:ok, result} = ExPgQuery.analyze("-- nothing")
 
       assert_tables_eq(result, [])
       assert_cte_names_eq(result, [])
@@ -45,7 +45,7 @@ defmodule ExPgQueryTest do
     end
 
     test "parses nested SELECT in FROM clause" do
-      {:ok, result} = ExPgQuery.parse("SELECT u.* FROM (SELECT * FROM users) u")
+      {:ok, result} = ExPgQuery.analyze("SELECT u.* FROM (SELECT * FROM users) u")
 
       assert_select_tables_eq(result, ["users"])
       assert_cte_names_eq(result, [])
@@ -54,7 +54,7 @@ defmodule ExPgQueryTest do
 
     test "parses nested SELECT in WHERE clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT users.id
           FROM users
           WHERE 1 = (SELECT COUNT(*) FROM user_roles)
@@ -67,7 +67,7 @@ defmodule ExPgQueryTest do
 
     test "parses WITH queries (CTEs)" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           WITH cte AS (SELECT * FROM x WHERE x.y = $1)
           SELECT * FROM cte
         """)
@@ -79,10 +79,10 @@ defmodule ExPgQueryTest do
     end
   end
 
-  describe "parse/1 for set operations" do
+  describe "analyze/1 for set operations" do
     test "parses UNION query" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id FROM table_a
           UNION
           SELECT id FROM table_b
@@ -95,7 +95,7 @@ defmodule ExPgQueryTest do
 
     test "parses INTERSECT query" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id FROM table_a
           INTERSECT
           SELECT id FROM table_b
@@ -108,7 +108,7 @@ defmodule ExPgQueryTest do
 
     test "parses EXCEPT query" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id FROM table_a
           EXCEPT
           SELECT id FROM table_b
@@ -121,7 +121,7 @@ defmodule ExPgQueryTest do
 
     test "parses complex set operations with CTEs" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           WITH
             cte_a AS (SELECT * FROM table_a),
             cte_b AS (SELECT * FROM table_b)
@@ -141,7 +141,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations with subqueries" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT * FROM (
             SELECT id FROM table_a
             UNION
@@ -161,7 +161,7 @@ defmodule ExPgQueryTest do
 
     test "parses UNION ALL vs UNION DISTINCT" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id FROM table_a
           UNION ALL
           SELECT id FROM table_b
@@ -176,7 +176,7 @@ defmodule ExPgQueryTest do
 
     test "parses INTERSECT with ALL option" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id FROM table_a
           INTERSECT ALL
           SELECT id FROM table_b
@@ -190,7 +190,7 @@ defmodule ExPgQueryTest do
 
     test "parses EXCEPT with ALL option" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id FROM table_a
           EXCEPT ALL
           SELECT id FROM table_b
@@ -203,7 +203,7 @@ defmodule ExPgQueryTest do
 
     test "parses complex set operations with CTEs and ordering" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           WITH
             cte_a AS (SELECT * FROM table_a ORDER BY id),
             cte_b AS (
@@ -227,7 +227,7 @@ defmodule ExPgQueryTest do
 
     test "parses recursive CTEs with set operations" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           WITH RECURSIVE tree AS (
             -- Base case
             SELECT id, parent_id, name, 1 AS level
@@ -256,7 +256,7 @@ defmodule ExPgQueryTest do
 
     test "parses complex nested set operations" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT * FROM (
             SELECT id FROM table_a
             UNION ALL
@@ -291,7 +291,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations with complex ORDER BY and LIMIT" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id, name FROM table_a
           UNION ALL
           (SELECT id, name FROM table_b ORDER BY name LIMIT 10)
@@ -308,7 +308,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations in JOIN conditions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT * FROM table_a a
           LEFT JOIN table_b b ON b.id IN (
             SELECT id FROM table_c
@@ -337,7 +337,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations in aggregates and window functions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT
             x.id,
             sum(CASE WHEN x.type IN (
@@ -365,7 +365,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations with complex recursive CTE expressions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
             SELECT g.id, g.link, g.data, 1,
               ARRAY[g.id],
@@ -406,7 +406,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations with lateral joins" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT a.*, counts.* FROM (
             SELECT id, name FROM users
             UNION ALL
@@ -440,7 +440,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations in function arguments" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT jsonb_build_object(
             'users', (
               SELECT json_agg(u) FROM (
@@ -477,7 +477,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations with different column counts/names" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id, name, created_at, updated_at FROM users
           UNION ALL
           SELECT id, name, created_at, NULL FROM legacy_users
@@ -504,7 +504,7 @@ defmodule ExPgQueryTest do
 
     test "parses set operations with VALUES clauses" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT id, 'current' as src FROM table_a
           UNION ALL
           SELECT id, 'archived' FROM table_b
@@ -524,7 +524,7 @@ defmodule ExPgQueryTest do
 
     test "extracts functions from queries" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT
             json_build_object(
               'stats', json_agg(
@@ -555,7 +555,7 @@ defmodule ExPgQueryTest do
 
     test "extracts filter columns from WHERE clauses" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT * FROM users u
           WHERE
             u.status = 'active'
@@ -581,7 +581,7 @@ defmodule ExPgQueryTest do
 
     test "extracts aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           WITH user_stats AS (
             SELECT
               u.id,
@@ -613,7 +613,7 @@ defmodule ExPgQueryTest do
 
     test "extracts filter columns from IN clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT * FROM users u
           WHERE u.org_id IN (SELECT id FROM organizations WHERE tier = 'premium')
         """)
@@ -627,7 +627,7 @@ defmodule ExPgQueryTest do
 
     test "parses queries with LATERAL joins and preserves aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT u.*, p.*
         FROM users u,
         LATERAL (
@@ -657,7 +657,7 @@ defmodule ExPgQueryTest do
 
     test "parses table functions with aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT n
         FROM generate_series(1, 10) AS g(n)
         WHERE n > 5
@@ -672,7 +672,7 @@ defmodule ExPgQueryTest do
 
     test "parses VALUES with column aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT v.x, v.y
         FROM (
           VALUES
@@ -690,7 +690,7 @@ defmodule ExPgQueryTest do
 
     test "parses different join types with aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT u.name, p.title, c.text
         FROM users u
         JOIN posts p ON p.user_id = u.id
@@ -716,7 +716,7 @@ defmodule ExPgQueryTest do
 
     test "parses schema qualified tables with aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT u.*, p.*
         FROM public.users u
         JOIN analytics.posts p ON p.user_id = u.id
@@ -739,7 +739,7 @@ defmodule ExPgQueryTest do
 
     test "parses column aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT
           u.id AS user_id,
           CASE WHEN u.type = 'admin' THEN true ELSE false END AS is_admin,
@@ -761,7 +761,7 @@ defmodule ExPgQueryTest do
 
     test "parses case sensitive and quoted identifiers as aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT
           "Users".id,
           "Complex Name".value,
@@ -787,7 +787,7 @@ defmodule ExPgQueryTest do
 
     test "parses reserved keywords as aliases" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT
           "select".id,
           "order".value,
@@ -810,7 +810,7 @@ defmodule ExPgQueryTest do
 
     test "parses complex subqueries with multiple alias levels" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         WITH cte AS (
           SELECT u.* FROM users u WHERE u.active = true
         )
@@ -858,7 +858,7 @@ defmodule ExPgQueryTest do
       query_text =
         "SELECT a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(a(b))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))"
 
-      {:ok, result} = ExPgQuery.parse(query_text)
+      {:ok, result} = ExPgQuery.analyze(query_text)
       assert Enum.sort(result.tables) == []
     end
 
@@ -874,7 +874,7 @@ defmodule ExPgQueryTest do
       JOIN "t26" ON (1) JOIN "t27" ON (1) JOIN "t28" ON (1) JOIN "t29" ON (1)
       """
 
-      {:ok, result} = ExPgQuery.parse(query_text)
+      {:ok, result} = ExPgQuery.analyze(query_text)
       assert_select_tables_eq(result, Enum.map(0..29, &"t#{&1}"))
     end
 
@@ -883,13 +883,13 @@ defmodule ExPgQueryTest do
         "SELECT * FROM foo " <>
           Enum.map_join(1..100, " ", &"JOIN foo_#{&1} ON foo.id = foo_#{&1}.foo_id")
 
-      {:ok, result} = ExPgQuery.parse(query_text)
+      {:ok, result} = ExPgQuery.analyze(query_text)
       assert_select_tables_eq(result, Enum.map(1..100, &"foo_#{&1}") ++ ["foo"])
     end
 
     test "parses subquery alias scopes correctly" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT e.name
         FROM employees AS e
         WHERE e.dept_id IN (
@@ -913,10 +913,10 @@ defmodule ExPgQueryTest do
     end
   end
 
-  describe "parse/1 for DML statements" do
+  describe "analyze/1 for DML statements" do
     test "parses INSERT statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         INSERT INTO users (name, email, created_at)
         VALUES
           ('John Doe', 'john@example.com', NOW()),
@@ -934,7 +934,7 @@ defmodule ExPgQueryTest do
 
     test "parses INSERT with SELECT" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         WITH archived AS (
           SELECT id, name, email FROM archived_users WHERE status = 'active'
         )
@@ -952,7 +952,7 @@ defmodule ExPgQueryTest do
 
     test "parses UPDATE statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         UPDATE users u
         SET
           status = 'inactive',
@@ -981,7 +981,7 @@ defmodule ExPgQueryTest do
 
     test "parses DELETE statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         WITH inactive_users AS (
           SELECT id FROM users
           WHERE last_login < NOW() - INTERVAL '1 year'
@@ -1001,7 +1001,7 @@ defmodule ExPgQueryTest do
 
     test "parses MERGE statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         MERGE INTO customer_accounts ca
         USING payment_transactions pt
         ON ca.id = pt.account_id
@@ -1031,7 +1031,7 @@ defmodule ExPgQueryTest do
 
     test "parses MERGE statements with multiple WHEN clauses with conditions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         MERGE INTO wines w
         USING wine_stock_changes s
         ON s.winename = w.winename
@@ -1065,10 +1065,12 @@ defmodule ExPgQueryTest do
     end
   end
 
-  describe "parse/1 for DDL statements" do
+  describe "analyze/1 for DDL statements" do
     test "finds the table in a SELECT INTO that is being created" do
       {:ok, result} =
-        ExPgQuery.parse(~s|SELECT * INTO films_recent FROM films WHERE date_prod >= "2002-01-01"|)
+        ExPgQuery.analyze(
+          ~s|SELECT * INTO films_recent FROM films WHERE date_prod >= "2002-01-01"|
+        )
 
       assert_ddl_tables_eq(result, ["films_recent"])
       assert_select_tables_eq(result, ["films"])
@@ -1076,7 +1078,7 @@ defmodule ExPgQueryTest do
 
     test "parses CREATE TABLE statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE TABLE users (
           id SERIAL PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
@@ -1095,7 +1097,7 @@ defmodule ExPgQueryTest do
 
     test "parses ALTER TABLE statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         ALTER TABLE users
           ADD COLUMN last_login TIMESTAMP,
           ADD COLUMN login_count INTEGER DEFAULT 0,
@@ -1112,7 +1114,7 @@ defmodule ExPgQueryTest do
 
     test "parses CREATE INDEX" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE INDEX testidx
         ON test
         USING btree (a, (lower(b) || upper(c)))
@@ -1127,7 +1129,7 @@ defmodule ExPgQueryTest do
 
     test "parses CREATE INDEX statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE UNIQUE INDEX CONCURRENTLY users_email_idx
         ON users (LOWER(email))
         WHERE deleted_at IS NULL
@@ -1140,7 +1142,7 @@ defmodule ExPgQueryTest do
 
     test "parses CREATE VIEW statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE OR REPLACE VIEW active_users AS
         SELECT u.*, COUNT(s.id) as session_count
         FROM users u
@@ -1166,7 +1168,7 @@ defmodule ExPgQueryTest do
 
     test "parses DROP statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         DROP TABLE IF EXISTS temporary_users CASCADE;
         DROP TABLE IF EXISTS public.temporary_ids;
         DROP INDEX IF EXISTS users_email_idx;
@@ -1188,7 +1190,7 @@ defmodule ExPgQueryTest do
 
     test "parses CREATE SEQUENCE statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE SEQUENCE IF NOT EXISTS order_id_seq
         INCREMENT BY 1
         START WITH 1000
@@ -1204,7 +1206,7 @@ defmodule ExPgQueryTest do
 
     test "parses CREATE SCHEMA statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE SCHEMA IF NOT EXISTS analytics;
         CREATE TABLE daily_stats (
           id SERIAL PRIMARY KEY,
@@ -1228,70 +1230,72 @@ defmodule ExPgQueryTest do
 
   describe "parse" do
     test "parses ALTER TABLE" do
-      {:ok, result} = ExPgQuery.parse("ALTER TABLE test ADD PRIMARY KEY (gid)")
+      {:ok, result} = ExPgQuery.analyze("ALTER TABLE test ADD PRIMARY KEY (gid)")
       assert_tables_eq(result, ["test"])
       assert_ddl_tables_eq(result, ["test"])
     end
 
     test "parses ALTER VIEW" do
-      {:ok, result} = ExPgQuery.parse("ALTER VIEW test SET (security_barrier = TRUE)")
+      {:ok, result} = ExPgQuery.analyze("ALTER VIEW test SET (security_barrier = TRUE)")
       assert_tables_eq(result, ["test"])
       assert_ddl_tables_eq(result, ["test"])
     end
 
     test "parses ALTER INDEX" do
-      {:ok, result} = ExPgQuery.parse("ALTER INDEX my_index_name SET (fastupdate = on)")
+      {:ok, result} = ExPgQuery.analyze("ALTER INDEX my_index_name SET (fastupdate = on)")
       assert_tables_eq(result, ["my_index_name"])
       assert_ddl_tables_eq(result, ["my_index_name"])
     end
 
     test "parses SET" do
-      {:ok, result} = ExPgQuery.parse("SET statement_timeout=0")
+      {:ok, result} = ExPgQuery.analyze("SET statement_timeout=0")
       assert_tables_eq(result, [])
     end
 
     test "parses SHOW" do
-      {:ok, result} = ExPgQuery.parse("SHOW work_mem")
+      {:ok, result} = ExPgQuery.analyze("SHOW work_mem")
       assert_tables_eq(result, [])
     end
 
     test "parses COPY" do
-      {:ok, result} = ExPgQuery.parse("COPY test (id) TO stdout")
+      {:ok, result} = ExPgQuery.analyze("COPY test (id) TO stdout")
       assert_tables_eq(result, ["test"])
       assert_select_tables_eq(result, ["test"])
     end
 
     test "parses DROP TABLE" do
-      {:ok, result} = ExPgQuery.parse("drop table abc.test123 cascade")
+      {:ok, result} = ExPgQuery.analyze("drop table abc.test123 cascade")
       assert_tables_eq(result, ["abc.test123"])
       assert_ddl_tables_eq(result, ["abc.test123"])
     end
 
     test "parses VACUUM" do
-      {:ok, result} = ExPgQuery.parse("VACUUM my_table")
+      {:ok, result} = ExPgQuery.analyze("VACUUM my_table")
       assert_tables_eq(result, ["my_table"])
       assert_ddl_tables_eq(result, ["my_table"])
     end
 
     test "parses EXPLAIN" do
-      {:ok, result} = ExPgQuery.parse("EXPLAIN DELETE FROM test")
+      {:ok, result} = ExPgQuery.analyze("EXPLAIN DELETE FROM test")
       assert_tables_eq(result, ["test"])
     end
 
     test "parses SELECT INTO" do
-      {:ok, result} = ExPgQuery.parse("CREATE TEMP TABLE test AS SELECT 1")
+      {:ok, result} = ExPgQuery.analyze("CREATE TEMP TABLE test AS SELECT 1")
       assert_tables_eq(result, ["test"])
       assert_ddl_tables_eq(result, ["test"])
     end
 
     test "parses LOCK" do
-      {:ok, result} = ExPgQuery.parse("LOCK TABLE public.schema_migrations IN ACCESS SHARE MODE")
+      {:ok, result} =
+        ExPgQuery.analyze("LOCK TABLE public.schema_migrations IN ACCESS SHARE MODE")
+
       assert_tables_eq(result, ["public.schema_migrations"])
       assert_select_tables_eq(result, ["public.schema_migrations"])
     end
 
     test "parses CREATE TABLE" do
-      {:ok, result} = ExPgQuery.parse("CREATE TABLE test (a int4)")
+      {:ok, result} = ExPgQuery.analyze("CREATE TABLE test (a int4)")
       assert_tables_eq(result, ["test"])
       assert_ddl_tables_eq(result, ["test"])
     end
@@ -1305,7 +1309,7 @@ defmodule ExPgQueryTest do
 
     test "parses CREATE INDEX" do
       {:ok, result} =
-        ExPgQuery.parse(
+        ExPgQuery.analyze(
           "CREATE INDEX testidx ON test USING btree (a, (lower(b) || upper(c))) WHERE pow(a, 2) > 25"
         )
 
@@ -1316,33 +1320,33 @@ defmodule ExPgQueryTest do
     end
 
     test "parses CREATE SCHEMA" do
-      {:ok, result} = ExPgQuery.parse("CREATE SCHEMA IF NOT EXISTS test AUTHORIZATION joe")
+      {:ok, result} = ExPgQuery.analyze("CREATE SCHEMA IF NOT EXISTS test AUTHORIZATION joe")
       assert_tables_eq(result, [])
     end
 
     test "parses CREATE VIEW" do
-      {:ok, result} = ExPgQuery.parse("CREATE VIEW myview AS SELECT * FROM mytab")
+      {:ok, result} = ExPgQuery.analyze("CREATE VIEW myview AS SELECT * FROM mytab")
       assert_tables_eq(result, ["myview", "mytab"])
       assert_ddl_tables_eq(result, ["myview"])
       assert_select_tables_eq(result, ["mytab"])
     end
 
     test "parses REFRESH MATERIALIZED VIEW" do
-      {:ok, result} = ExPgQuery.parse("REFRESH MATERIALIZED VIEW myview")
+      {:ok, result} = ExPgQuery.analyze("REFRESH MATERIALIZED VIEW myview")
       assert_tables_eq(result, ["myview"])
       assert_ddl_tables_eq(result, ["myview"])
     end
 
     test "parses CREATE RULE" do
       {:ok, result} =
-        ExPgQuery.parse("CREATE RULE shoe_ins_protect AS ON INSERT TO shoe DO INSTEAD NOTHING")
+        ExPgQuery.analyze("CREATE RULE shoe_ins_protect AS ON INSERT TO shoe DO INSTEAD NOTHING")
 
       assert_tables_eq(result, ["shoe"])
     end
 
     test "parses CREATE TRIGGER" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE TRIGGER check_update
         BEFORE UPDATE ON accounts
         FOR EACH ROW
@@ -1354,12 +1358,12 @@ defmodule ExPgQueryTest do
     end
 
     test "parses DROP SCHEMA" do
-      {:ok, result} = ExPgQuery.parse("DROP SCHEMA myschema")
+      {:ok, result} = ExPgQuery.analyze("DROP SCHEMA myschema")
       assert_tables_eq(result, [])
     end
 
     test "parses DROP VIEW" do
-      {:ok, result} = ExPgQuery.parse("DROP VIEW myview, myview2")
+      {:ok, result} = ExPgQuery.analyze("DROP VIEW myview, myview2")
       # here it differs from the ruby implemention. for some reason views aren't
       # considered to be "tables" in DROP statements, while they are considered
       # to be tables in CREATE statements. we consider them to be tables in both.
@@ -1368,35 +1372,35 @@ defmodule ExPgQueryTest do
     end
 
     test "parses DROP INDEX" do
-      {:ok, result} = ExPgQuery.parse("DROP INDEX CONCURRENTLY myindex")
+      {:ok, result} = ExPgQuery.analyze("DROP INDEX CONCURRENTLY myindex")
       assert_tables_eq(result, [])
     end
 
     test "parses DROP RULE" do
-      {:ok, result} = ExPgQuery.parse("DROP RULE myrule ON mytable CASCADE")
+      {:ok, result} = ExPgQuery.analyze("DROP RULE myrule ON mytable CASCADE")
       assert_tables_eq(result, ["mytable"])
       assert_ddl_tables_eq(result, ["mytable"])
     end
 
     test "parses DROP TRIGGER" do
-      {:ok, result} = ExPgQuery.parse("DROP TRIGGER IF EXISTS mytrigger ON mytable RESTRICT")
+      {:ok, result} = ExPgQuery.analyze("DROP TRIGGER IF EXISTS mytrigger ON mytable RESTRICT")
       assert_tables_eq(result, ["mytable"])
       assert_ddl_tables_eq(result, ["mytable"])
     end
 
     test "parses GRANT" do
-      {:ok, result} = ExPgQuery.parse("GRANT INSERT, UPDATE ON mytable TO myuser")
+      {:ok, result} = ExPgQuery.analyze("GRANT INSERT, UPDATE ON mytable TO myuser")
       assert_tables_eq(result, ["mytable"])
       assert_ddl_tables_eq(result, ["mytable"])
     end
 
     test "parses REVOKE" do
-      {:ok, result} = ExPgQuery.parse("REVOKE admins FROM joe")
+      {:ok, result} = ExPgQuery.analyze("REVOKE admins FROM joe")
       assert_tables_eq(result, [])
     end
 
     test "parses TRUNCATE" do
-      {:ok, result} = ExPgQuery.parse(~s|TRUNCATE bigtable, "fattable" RESTART IDENTITY|)
+      {:ok, result} = ExPgQuery.analyze(~s|TRUNCATE bigtable, "fattable" RESTART IDENTITY|)
       assert_tables_eq(result, ["bigtable", "fattable"])
       assert_ddl_tables_eq(result, ["bigtable", "fattable"])
 
@@ -1424,7 +1428,9 @@ defmodule ExPgQueryTest do
 
     test "parses WITH" do
       {:ok, result} =
-        ExPgQuery.parse("WITH a AS (SELECT * FROM x WHERE x.y = $1 AND x.z = 1) SELECT * FROM a")
+        ExPgQuery.analyze(
+          "WITH a AS (SELECT * FROM x WHERE x.y = $1 AND x.z = 1) SELECT * FROM a"
+        )
 
       assert_tables_eq(result, ["x"])
       assert_select_tables_eq(result, ["x"])
@@ -1433,7 +1439,7 @@ defmodule ExPgQueryTest do
 
     test "parses multi-line function definitions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE OR REPLACE FUNCTION thing(parameter_thing text)
           RETURNS bigint AS
         $BODY$
@@ -1460,7 +1466,7 @@ defmodule ExPgQueryTest do
 
     test "parses table functions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         CREATE FUNCTION getfoo(int) RETURNS TABLE (f1 int) AS '
           SELECT * FROM foo WHERE fooid = $1;
         ' LANGUAGE SQL
@@ -1474,7 +1480,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds created functions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           CREATE OR REPLACE FUNCTION foo.testfunc(x integer) RETURNS integer AS $$
           BEGIN
           RETURN x
@@ -1489,7 +1495,7 @@ defmodule ExPgQueryTest do
     end
 
     test "correctly finds called functions" do
-      {:ok, result} = ExPgQuery.parse("SELECT foo.testfunc(1);")
+      {:ok, result} = ExPgQuery.analyze("SELECT foo.testfunc(1);")
       assert_tables_eq(result, [])
       assert_functions_eq(result, ["foo.testfunc"])
       assert_ddl_functions_eq(result, [])
@@ -1497,7 +1503,7 @@ defmodule ExPgQueryTest do
     end
 
     test "correctly finds dropped functions" do
-      {:ok, result} = ExPgQuery.parse("DROP FUNCTION IF EXISTS foo.testfunc(x integer);")
+      {:ok, result} = ExPgQuery.analyze("DROP FUNCTION IF EXISTS foo.testfunc(x integer);")
       assert_tables_eq(result, [])
       assert_functions_eq(result, ["foo.testfunc"])
       assert_ddl_functions_eq(result, ["foo.testfunc"])
@@ -1505,7 +1511,9 @@ defmodule ExPgQueryTest do
     end
 
     test "correctly finds renamed functions" do
-      {:ok, result} = ExPgQuery.parse("ALTER FUNCTION foo.testfunc(integer) RENAME TO testfunc2;")
+      {:ok, result} =
+        ExPgQuery.analyze("ALTER FUNCTION foo.testfunc(integer) RENAME TO testfunc2;")
+
       assert_tables_eq(result, [])
       assert_functions_eq(result, ["foo.testfunc", "testfunc2"])
       assert_ddl_functions_eq(result, ["foo.testfunc", "testfunc2"])
@@ -1514,7 +1522,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in select clause" do
       {:ok, result} =
-        ExPgQuery.parse(
+        ExPgQuery.analyze(
           "select u.email, (select count(*) from enrollments e where e.user_id = u.id) as num_enrollments from users u"
         )
 
@@ -1524,7 +1532,7 @@ defmodule ExPgQueryTest do
 
     test "correctly separates CTE names from table names" do
       {:ok, result} =
-        ExPgQuery.parse("WITH cte_name AS (SELECT 1) SELECT * FROM table_name, cte_name")
+        ExPgQuery.analyze("WITH cte_name AS (SELECT 1) SELECT * FROM table_name, cte_name")
 
       assert_cte_names_eq(result, ["cte_name"])
       assert_tables_eq(result, ["table_name"])
@@ -1532,14 +1540,16 @@ defmodule ExPgQueryTest do
     end
 
     test "correctly finds nested tables in from clause" do
-      {:ok, result} = ExPgQuery.parse("select u.* from (select * from users) u")
+      {:ok, result} = ExPgQuery.analyze("select u.* from (select * from users) u")
       assert_tables_eq(result, ["users"])
       assert_select_tables_eq(result, ["users"])
     end
 
     test "correctly finds nested tables in where clause" do
       {:ok, result} =
-        ExPgQuery.parse("select users.id from users where 1 = (select count(*) from user_roles)")
+        ExPgQuery.analyze(
+          "select users.id from users where 1 = (select count(*) from user_roles)"
+        )
 
       assert_tables_eq(result, ["users", "user_roles"])
       assert_select_tables_eq(result, ["users", "user_roles"])
@@ -1547,7 +1557,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds tables in a select that has sub-selects without from clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT *
         FROM pg_catalog.pg_class c
         JOIN (
@@ -1565,7 +1575,7 @@ defmodule ExPgQueryTest do
 
     test "traverse boolean expressions in where clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           select users.*
           from users
           where users.id IN (
@@ -1579,7 +1589,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in the order by clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           select users.*
           from users
           order by (
@@ -1594,7 +1604,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in the order by clause with multiple entries" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           select users.*
           from users
           order by (
@@ -1613,7 +1623,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in the group by clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         select users.*
         from users
         group by (
@@ -1628,7 +1638,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in the group by clause with multiple entries" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         select users.*
         from users
         group by (
@@ -1647,7 +1657,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in the having clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         select users.*
         from users
         group by users.id
@@ -1663,7 +1673,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in the having clause with a boolean expression" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           select users.*
           from users
           group by users.id
@@ -1679,7 +1689,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in a subselect on a join" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           select foo.*
           from foo
           join ( select * from bar ) b
@@ -1691,7 +1701,7 @@ defmodule ExPgQueryTest do
 
     test "correctly finds nested tables in a subselect in a join condition" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT *
           FROM foo
           INNER JOIN join_a
@@ -1729,7 +1739,7 @@ defmodule ExPgQueryTest do
 
     test "does not list CTEs as tables after a UNION select" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           with cte_a as (
             select * from table_a
           ), cte_b as (
@@ -1751,7 +1761,7 @@ defmodule ExPgQueryTest do
 
     test "does not list CTEs as tables after a EXCEPT select" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           with cte_a as (
             select * from table_a
           ), cte_b as (
@@ -1774,7 +1784,7 @@ defmodule ExPgQueryTest do
 
     test "does not list CTEs as tables after a INTERSECT select" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           with cte_a as (
             select * from table_a
           ), cte_b as (
@@ -1796,7 +1806,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables inside subselects in MIN/MAX and COALESCE functions" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT GREATEST(
                    date_trunc($1, $2::timestamptz) + $3::interval,
                    COALESCE(
@@ -1818,7 +1828,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables inside of case statements" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT
             CASE
               WHEN id IN (SELECT foo_id FROM when_a) THEN (SELECT MAX(id) FROM then_a)
@@ -1836,7 +1846,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables inside of casts" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           SELECT 1
           FROM   foo
           WHERE  x = any(cast(array(SELECT a FROM bar) as bigint[]))
@@ -1849,7 +1859,7 @@ defmodule ExPgQueryTest do
 
     test "finds functions in FROM clauses" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT *
           FROM my_custom_func()
         """)
@@ -1864,7 +1874,7 @@ defmodule ExPgQueryTest do
 
     test "finds functions inside LATERAL clauses" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT *
           FROM unnest($1::text[]) AS a(x)
           LEFT OUTER JOIN LATERAL (
@@ -1896,7 +1906,7 @@ defmodule ExPgQueryTest do
 
     test "finds the table in a SELECT INTO that is being created" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         SELECT * INTO films_recent FROM films WHERE date_prod >= '2002-01-01';
         """)
 
@@ -1909,7 +1919,7 @@ defmodule ExPgQueryTest do
   describe "parsing INSERT" do
     test "finds the table inserted into" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           insert into users(pk, name) values (1, 'bob');
         """)
 
@@ -1919,7 +1929,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in being selected from for insert" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           insert into users(pk, name) select pk, name from other_users;
         """)
 
@@ -1929,7 +1939,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in a CTE" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           with cte as (
             select pk, name from other_users
           )
@@ -1942,7 +1952,7 @@ defmodule ExPgQueryTest do
 
     test "finds insert from table" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           insert into users(pk, name) select * from other_users;
         """)
 
@@ -1956,7 +1966,7 @@ defmodule ExPgQueryTest do
   describe "parsing UPDATE" do
     test "finds the table updateed into" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           update users set name = 'bob';
         """)
 
@@ -1965,7 +1975,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in a sub-select" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           update users set name = (select name from other_users limit 1);
         """)
 
@@ -1975,7 +1985,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in a CTE" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           with cte as (
             select name from other_users limit 1
           )
@@ -1990,7 +2000,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables referenced in the FROM clause" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           UPDATE users SET name = users_new.name
           FROM users_new
           INNER JOIN join_table ON join_table.user_id = new_users.id
@@ -2007,7 +2017,7 @@ defmodule ExPgQueryTest do
   describe "parsing DELETE" do
     test "finds the deleted table" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           DELETE FROM users;
         """)
 
@@ -2017,7 +2027,7 @@ defmodule ExPgQueryTest do
 
     test "finds the used table" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           DELETE FROM users USING foo
             WHERE foo_id = foo.id AND foo.action = 'delete';
         """)
@@ -2029,7 +2039,7 @@ defmodule ExPgQueryTest do
 
     test "finds the table in the where subquery" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           DELETE FROM users
             WHERE foo_id IN (SELECT id FROM foo WHERE action = 'delete');
         """)
@@ -2041,7 +2051,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in a CTE" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           with cte as (
             select pk from other_users
           )
@@ -2057,19 +2067,19 @@ defmodule ExPgQueryTest do
   end
 
   test "handles DROP TYPE" do
-    {:ok, result} = ExPgQuery.parse("DROP TYPE IF EXISTS repack.pk_something")
+    {:ok, result} = ExPgQuery.analyze("DROP TYPE IF EXISTS repack.pk_something")
     assert_tables_eq(result, [])
   end
 
   test "handles COPY" do
-    {:ok, result} = ExPgQuery.parse("COPY (SELECT test FROM abc) TO STDOUT WITH (FORMAT 'csv')")
+    {:ok, result} = ExPgQuery.analyze("COPY (SELECT test FROM abc) TO STDOUT WITH (FORMAT 'csv')")
     assert_tables_eq(result, ["abc"])
   end
 
   describe "parsing CREATE TABLE AS" do
     test "finds tables in the subquery" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           CREATE TABLE foo AS
             SELECT * FROM bar;
         """)
@@ -2081,7 +2091,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in the subquery with UNION" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           CREATE TABLE foo AS
             SELECT id FROM bar UNION SELECT id from baz;
         """)
@@ -2093,7 +2103,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in the subquery with EXCEPT" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           CREATE TABLE foo AS
             SELECT id FROM bar EXCEPT SELECT id from baz;
         """)
@@ -2105,7 +2115,7 @@ defmodule ExPgQueryTest do
 
     test "finds tables in the subquery with INTERSECT" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
           CREATE TABLE foo AS
             SELECT id FROM bar INTERSECT SELECT id from baz;
         """)
@@ -2119,7 +2129,7 @@ defmodule ExPgQueryTest do
   describe "parsing PREPARE" do
     test "finds tables in the subquery" do
       {:ok, result} =
-        ExPgQuery.parse("""
+        ExPgQuery.analyze("""
         PREPARE qux AS SELECT bar from foo
         """)
 
@@ -2131,7 +2141,7 @@ defmodule ExPgQueryTest do
 
   test "parses CREATE TEMP TABLE" do
     {:ok, result} =
-      ExPgQuery.parse("CREATE TEMP TABLE foo AS SELECT 1;")
+      ExPgQuery.analyze("CREATE TEMP TABLE foo AS SELECT 1;")
 
     assert_tables_eq(result, ["foo"])
     assert_ddl_tables_eq(result, ["foo"])
@@ -2151,18 +2161,18 @@ defmodule ExPgQueryTest do
 
   describe "filter_columns" do
     test "finds unqualified names" do
-      {:ok, result} = ExPgQuery.parse("SELECT * FROM x WHERE y = $1 AND z = 1")
+      {:ok, result} = ExPgQuery.analyze("SELECT * FROM x WHERE y = $1 AND z = 1")
       assert_filter_columns_eq(result, [{nil, "y"}, {nil, "z"}])
     end
 
     test "finds qualified names" do
-      {:ok, result} = ExPgQuery.parse("SELECT * FROM x WHERE x.y = $1 AND x.z = 1")
+      {:ok, result} = ExPgQuery.analyze("SELECT * FROM x WHERE x.y = $1 AND x.z = 1")
       assert_filter_columns_eq(result, [{"x", "y"}, {"x", "z"}])
     end
 
     test "traverses into CTEs" do
       {:ok, result} =
-        ExPgQuery.parse(
+        ExPgQuery.analyze(
           "WITH a AS (SELECT * FROM x WHERE x.y = $1 AND x.z = 1) SELECT * FROM a WHERE b = 5"
         )
 
@@ -2170,19 +2180,19 @@ defmodule ExPgQueryTest do
     end
 
     test "recognizes boolean tests" do
-      {:ok, result} = ExPgQuery.parse("SELECT * FROM x WHERE x.y IS TRUE AND x.z IS NOT FALSE")
+      {:ok, result} = ExPgQuery.analyze("SELECT * FROM x WHERE x.y IS TRUE AND x.z IS NOT FALSE")
       assert_filter_columns_eq(result, [{"x", "y"}, {"x", "z"}])
     end
 
     test "finds COALESCE argument names" do
-      {:ok, result} = ExPgQuery.parse("SELECT * FROM x WHERE x.y = COALESCE(z.a, z.b)")
+      {:ok, result} = ExPgQuery.analyze("SELECT * FROM x WHERE x.y = COALESCE(z.a, z.b)")
       assert_filter_columns_eq(result, [{"x", "y"}, {"z", "a"}, {"z", "b"}])
     end
 
     for combiner <- ["UNION", "UNION ALL", "EXCEPT", "EXCEPT ALL", "INTERSECT", "INTERSECT ALL"] do
       test "finds unqualified names in #{combiner} query" do
         {:ok, result} =
-          ExPgQuery.parse(
+          ExPgQuery.analyze(
             "SELECT * FROM x where y = $1 #{unquote(combiner)} SELECT * FROM x where z = $2"
           )
 
@@ -2195,7 +2205,7 @@ defmodule ExPgQueryTest do
     test "convenience wrapper for truncate works" do
       query = "WITH x AS (SELECT * FROM y) SELECT * FROM x"
       expected = "WITH x AS (...) SELECT * FROM x"
-      {:ok, result} = ExPgQuery.parse(query)
+      {:ok, result} = ExPgQuery.analyze(query)
       {:ok, truncated} = ExPgQuery.truncate(result, 40)
       assert expected == truncated
     end
