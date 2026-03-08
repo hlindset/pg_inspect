@@ -23,24 +23,24 @@ defmodule ExPgQuery.TreeUtilsTest do
                TreeUtils.update_in_tree(tree, [:items, 1], fn _ -> 99 end)
     end
 
-    test "handles nil item in list" do
+    test "updates nil items in lists" do
       tree = %{items: [nil, 2, 3]}
 
-      assert {:error, "index 0 out of bounds"} =
+      assert {:ok, %{items: [99, 2, 3]}} =
                TreeUtils.update_in_tree(tree, [:items, 0], fn _ -> 99 end)
     end
 
     test "handles index out of bounds" do
       tree = %{items: [1, 2, 3]}
 
-      assert {:error, "index 5 out of bounds"} =
+      assert {:error, {:index_out_of_bounds, 5}} =
                TreeUtils.update_in_tree(tree, [:items, 5], fn _ -> 99 end)
     end
 
     test "handles missing keys" do
       tree = %{a: 1}
 
-      assert {:error, "key b not found"} =
+      assert {:error, {:missing_key, :b}} =
                TreeUtils.update_in_tree(tree, [:b], fn _ -> 2 end)
     end
 
@@ -64,7 +64,7 @@ defmodule ExPgQuery.TreeUtilsTest do
         node: {:select_stmt, %PgQuery.SelectStmt{}}
       }
 
-      assert {:error, "key invalid_key not found"} =
+      assert {:error, {:missing_key, :invalid_key}} =
                TreeUtils.update_in_tree(tree, [:select_stmt, :invalid_key], fn _ -> nil end)
     end
 
@@ -73,21 +73,21 @@ defmodule ExPgQuery.TreeUtilsTest do
         node: {:select_stmt, %PgQuery.SelectStmt{}}
       }
 
-      assert {:error, "expected node type update_stmt but found select_stmt"} =
+      assert {:error, {:unexpected_node_type, :update_stmt, :select_stmt}} =
                TreeUtils.update_in_tree(tree, [:update_stmt], fn _ -> nil end)
     end
 
     test "handles error in oneof field update" do
       tree = %{key: {:type1, %{invalid_key: 1}}}
 
-      assert {:error, "key value not found"} =
+      assert {:error, {:missing_key, :value}} =
                TreeUtils.update_in_tree(tree, [:key, :value], fn _ -> 2 end)
     end
 
     test "handles error in regular field update" do
       tree = %{key: %{invalid_key: 1}}
 
-      assert {:error, "key value not found"} =
+      assert {:error, {:missing_key, :value}} =
                TreeUtils.update_in_tree(tree, [:key, :value], fn _ -> 2 end)
     end
 
@@ -97,6 +97,11 @@ defmodule ExPgQuery.TreeUtilsTest do
       {:ok, updated} = TreeUtils.update_in_tree(tree, [:key, :value], fn _ -> 2 end)
 
       assert updated == %{key: {:type1, %{value: 2}}}
+    end
+
+    test "returns a typed error for non-traversable values" do
+      assert {:error, {:non_traversable, 1, :a}} =
+               TreeUtils.update_in_tree(1, [:a], fn _ -> 2 end)
     end
   end
 
@@ -109,7 +114,7 @@ defmodule ExPgQuery.TreeUtilsTest do
     test "raises error on failure" do
       tree = %{a: 1}
 
-      assert_raise RuntimeError, "Update error: \"key b not found\"", fn ->
+      assert_raise ArgumentError, "key b not found", fn ->
         TreeUtils.update_in_tree!(tree, [:b], fn _ -> 2 end)
       end
     end
@@ -128,7 +133,7 @@ defmodule ExPgQuery.TreeUtilsTest do
 
     test "handles error cases" do
       tree = %{a: 1}
-      assert {:error, "key b not found"} = TreeUtils.put_in_tree(tree, [:b], 2)
+      assert {:error, {:missing_key, :b}} = TreeUtils.put_in_tree(tree, [:b], 2)
     end
   end
 end

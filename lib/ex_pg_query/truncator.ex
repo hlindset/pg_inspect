@@ -2,56 +2,40 @@ defmodule ExPgQuery.Truncator do
   @moduledoc """
   Provides functionality to intelligently truncate SQL queries.
 
-  Falls back to simple string truncation if smart truncation isn't sufficient.
-
-  ## Example
-
-      iex> long_query = "SELECT very, many, columns, that, make, query, too, long FROM a_table"
-      iex> {:ok, protobuf} = ExPgQuery.Protobuf.from_sql(long_query)
-      iex> ExPgQuery.Truncator.truncate(protobuf, 30)
-      {:ok, "SELECT ... FROM a_table"}
-
+  Falls back to deterministic string truncation if smart truncation is not
+  sufficient.
   """
 
-  alias ExPgQuery.TreeWalker
-  alias ExPgQuery.TreeUtils
+  alias ExPgQuery.AST
+  alias ExPgQuery.AST.Visit
   alias ExPgQuery.Protobuf
 
   defmodule PossibleTruncation do
-    @moduledoc """
-    Represents a location in the query that could be truncated.
+    @moduledoc false
 
-    ## Fields
-
-      * `parent_node` - The AST node that contains the truncatable element
-      * `location` - Path to the truncatable element in the AST
-      * `node_type` - Type of the node (`:target_list`, `:where_clause`, etc.)
-      * `length` - Length of the text representation of this element
-
-    """
     defstruct [:parent_node, :location, :node_type, :length]
   end
 
-  # Predefined dummy nodes used for truncation
-  @short_ellipsis "…"
-  @final_ellipsis "..."
-  @final_ellipsis_length String.length(@final_ellipsis)
+  @short_ellipsis "..."
+  @placeholder "__ex_pg_query_truncation_sentinel__"
+  @short_ellipsis_length String.length(@short_ellipsis)
+
   @dummy_column_ref %PgQuery.Node{
     node:
       {:column_ref,
        %PgQuery.ColumnRef{
-         fields: [%PgQuery.Node{node: {:string, %PgQuery.String{sval: @short_ellipsis}}}]
+         fields: [%PgQuery.Node{node: {:string, %PgQuery.String{sval: @placeholder}}}]
        }}
   }
   @dummy_column_ref_list [@dummy_column_ref]
   @dummy_ctequery_node %PgQuery.Node{
     node: {:select_stmt, %PgQuery.SelectStmt{where_clause: @dummy_column_ref, op: :SETOP_NONE}}
   }
-  @dummy_cols_list [%PgQuery.Node{node: {:res_target, %PgQuery.ResTarget{name: @short_ellipsis}}}]
+  @dummy_cols_list [%PgQuery.Node{node: {:res_target, %PgQuery.ResTarget{name: @placeholder}}}]
   @dummy_values_list [%PgQuery.Node{node: {:list, %PgQuery.List{items: [@dummy_column_ref]}}}]
   @dummy_named_target_list [
     %PgQuery.Node{
-      node: {:res_target, %PgQuery.ResTarget{name: @short_ellipsis, val: @dummy_column_ref}}
+      node: {:res_target, %PgQuery.ResTarget{name: @placeholder, val: @dummy_column_ref}}
     }
   ]
   @dummy_unnamed_target_list [
@@ -60,49 +44,10 @@ defmodule ExPgQuery.Truncator do
     }
   ]
 
-  # Fixes the output string by replacing placeholder ellipses with the final format.
-  defp fix_output(output) do
-    output
-    |> String.replace(~s|SELECT WHERE "#{@short_ellipsis}"|, @final_ellipsis)
-    |> String.replace(~s|"#{@short_ellipsis}"|, @final_ellipsis)
-  end
-
-  # Calculates the length of a query represented by a protobuf AST.
-  #
-  # Returns `{:ok, {length, output}}` where length is the string length and
-  # output is the deparsed query string.
-  defp query_length(tree) do
-    with {:ok, output} <- Protobuf.to_sql(tree) do
-      fixed_output = fix_output(output)
-      {:ok, {String.length(fixed_output), fixed_output}}
-    end
-  end
-
   @doc """
   Truncates a SQL query to be below the specified length.
-
-  Attempts smart truncation of specific query parts before falling back to
-  hard truncation.
-
-  ## Parameters
-
-    * `tree` - A `PgQuery.ParseResult` struct containing the parsed query
-    * `max_length` - Maximum allowed length of the output string
-
-  ## Returns
-
-    * `{:ok, string}` - Successfully truncated query
-    * `{:error, reason}` - Error during truncation
-
-  ## Examples
-
-      iex> query = "SELECT * FROM users WHERE name = 'very long name'"
-      iex> {:ok, tree} = ExPgQuery.Protobuf.from_sql(query)
-      iex> ExPgQuery.Truncator.truncate(tree, 30)
-      {:ok, "SELECT * FROM users WHERE ..."}
-
   """
-  def truncate(%PgQuery.ParseResult{} = tree, max_length) do
+  def truncate(%PgQuery.ParseResult{} = tree, max_length) when is_integer(max_length) do
     with {:ok, {length, output}} <- query_length(tree) do
       if length <= max_length do
         {:ok, output}
@@ -114,20 +59,6 @@ defmodule ExPgQuery.Truncator do
 
   @doc """
   Same as `truncate/2` but raises on error.
-
-  ## Parameters
-
-    * `tree` - A `PgQuery.ParseResult` struct containing the parsed query
-    * `max_length` - Maximum allowed length of the output string
-
-  ## Returns
-
-    * `string` - Successfully truncated query
-
-  ## Raises
-
-    * RuntimeError if truncation fails
-
   """
   def truncate!(tree, max_length) do
     case truncate(tree, max_length) do
@@ -136,33 +67,25 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  # Performs the actual truncation by trying smart truncation first,
-  # then falling back to hard truncation if needed.
   defp do_truncate(tree, max_length) do
-    # Find possible truncation points
     truncations =
-      find_possible_truncations(tree)
-      |> Enum.reject(&(&1.length < @final_ellipsis_length))
+      tree
+      |> find_possible_truncations()
+      |> Enum.reject(&(&1.length < @short_ellipsis_length))
       |> Enum.sort_by(&{length(&1.location) * -1, &1.length * -1})
 
-    # Try smart truncation first
     case try_smart_truncation(tree, truncations, max_length) do
-      {:ok, {length, output}} ->
-        if length <= max_length do
-          {:ok, output}
-        else
-          # If smart truncation wasn't enough, do hard truncation
-          slice_end = max_length - @final_ellipsis_length - 1
-          {:ok, String.slice(output, 0..max(slice_end, 0)) <> @final_ellipsis}
-        end
+      {:ok, {length, output}} when length <= max_length ->
+        {:ok, output}
+
+      {:ok, {_length, output}} ->
+        {:ok, hard_truncate(output, max_length)}
 
       {:error, _} = error ->
         error
     end
   end
 
-  # Attempts to smartly truncate the query by trying each possible truncation point
-  # until the query is short enough.
   defp try_smart_truncation(tree, truncations, max_length) do
     final_tree =
       Enum.reduce_while(truncations, {:ok, tree}, fn truncation, {:ok, tree_acc} ->
@@ -173,8 +96,6 @@ defmodule ExPgQuery.Truncator do
           else
             {:halt, {:ok, updated_tree}}
           end
-        else
-          {:error, _} = error -> {:halt, error}
         end
       end)
 
@@ -183,42 +104,154 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  # Updates the AST by replacing a node with a truncated version.
-  # The type of truncation depends on the node_type in the PossibleTruncation struct.
-  defp update_tree(tree, truncation) do
-    case truncation do
-      %PossibleTruncation{node_type: :target_list, parent_node: parent_node, location: location}
-      when is_struct(parent_node, PgQuery.UpdateStmt) or
-             is_struct(parent_node, PgQuery.OnConflictClause) ->
-        TreeUtils.put_in_tree(tree, location, @dummy_named_target_list)
+  defp update_tree(tree, %PossibleTruncation{} = truncation) do
+    case replacement_for(truncation) do
+      nil ->
+        {:error, {:unhandled_truncation, truncation}}
 
-      %PossibleTruncation{node_type: :target_list, location: location} ->
-        TreeUtils.put_in_tree(tree, location, @dummy_unnamed_target_list)
-
-      %PossibleTruncation{node_type: :group_clause, location: location} ->
-        TreeUtils.put_in_tree(tree, location, @dummy_column_ref_list)
-
-      %PossibleTruncation{node_type: :where_clause, location: location} ->
-        TreeUtils.put_in_tree(tree, location, @dummy_column_ref)
-
-      %PossibleTruncation{node_type: :values_lists, location: location} ->
-        TreeUtils.put_in_tree(tree, location, @dummy_values_list)
-
-      %PossibleTruncation{node_type: :ctequery, location: location} ->
-        TreeUtils.put_in_tree(tree, location, @dummy_ctequery_node)
-
-      %PossibleTruncation{node_type: :cols, location: location} ->
-        TreeUtils.put_in_tree(tree, location, @dummy_cols_list)
-
-      possible_truncation ->
-        {:error, {:unhandled_truncation, possible_truncation}}
+      replacement ->
+        AST.put(tree, truncation.location, replacement)
     end
   end
 
-  # The following functions calculate the length of different query components
-  # when rendered as strings. They're used to determine which parts to truncate first.
+  defp replacement_for(%PossibleTruncation{node_type: :target_list, parent_node: parent_node})
+       when is_struct(parent_node, PgQuery.UpdateStmt) or
+              is_struct(parent_node, PgQuery.OnConflictClause) do
+    @dummy_named_target_list
+  end
 
-  # Calculates the length of a SELECT target list when rendered.
+  defp replacement_for(%PossibleTruncation{node_type: :target_list}),
+    do: @dummy_unnamed_target_list
+
+  defp replacement_for(%PossibleTruncation{node_type: :group_clause}), do: @dummy_column_ref_list
+  defp replacement_for(%PossibleTruncation{node_type: :where_clause}), do: @dummy_column_ref
+  defp replacement_for(%PossibleTruncation{node_type: :values_lists}), do: @dummy_values_list
+  defp replacement_for(%PossibleTruncation{node_type: :ctequery}), do: @dummy_ctequery_node
+  defp replacement_for(%PossibleTruncation{node_type: :cols}), do: @dummy_cols_list
+  defp replacement_for(_truncation), do: nil
+
+  defp find_possible_truncations(tree) do
+    AST.reduce(tree, [], fn %Visit{} = visit, acc ->
+      case candidate_for_visit(visit) do
+        nil -> acc
+        candidate -> [candidate | acc]
+      end
+    end)
+  end
+
+  defp candidate_for_visit(%Visit{} = visit) do
+    Enum.find_value(candidate_specs(), fn spec ->
+      if spec.field == visit.field and spec.match?.(visit) do
+        case spec.length.(visit) do
+          {:ok, length} ->
+            %PossibleTruncation{
+              parent_node: visit.parent,
+              location: visit.path,
+              node_type: spec.node_type,
+              length: length
+            }
+
+          {:error, _reason} ->
+            nil
+        end
+      end
+    end)
+  end
+
+  defp candidate_specs do
+    [
+      %{
+        field: :target_list,
+        node_type: :target_list,
+        match?: fn %Visit{parent: parent} ->
+          is_struct(parent, PgQuery.SelectStmt) or
+            is_struct(parent, PgQuery.UpdateStmt) or
+            is_struct(parent, PgQuery.OnConflictClause)
+        end,
+        length: fn %Visit{parent: parent, node: node} ->
+          case parent do
+            %PgQuery.SelectStmt{} -> select_target_list_length(node)
+            _ -> update_target_list_length(node)
+          end
+        end
+      },
+      %{
+        field: :group_clause,
+        node_type: :group_clause,
+        match?: fn _visit -> true end,
+        length: fn %Visit{node: node} -> group_clause_length(node) end
+      },
+      %{
+        field: :where_clause,
+        node_type: :where_clause,
+        match?: fn %Visit{parent: parent} ->
+          is_struct(parent, PgQuery.SelectStmt) or
+            is_struct(parent, PgQuery.UpdateStmt) or
+            is_struct(parent, PgQuery.DeleteStmt) or
+            is_struct(parent, PgQuery.CopyStmt) or
+            is_struct(parent, PgQuery.IndexStmt) or
+            is_struct(parent, PgQuery.RuleStmt) or
+            is_struct(parent, PgQuery.InferClause) or
+            is_struct(parent, PgQuery.OnConflictClause)
+        end,
+        length: fn %Visit{node: node} -> where_clause_length(node) end
+      },
+      %{
+        field: :values_lists,
+        node_type: :values_lists,
+        match?: fn %Visit{node: node} -> match?([_ | _], node) end,
+        length: fn %Visit{node: node} -> select_values_lists_length(node) end
+      },
+      %{
+        field: :ctequery,
+        node_type: :ctequery,
+        match?: fn %Visit{parent: parent, node: node} ->
+          is_struct(parent, PgQuery.CommonTableExpr) and
+            match?(%PgQuery.Node{node: {:select_stmt, _}}, node)
+        end,
+        length: fn
+          %Visit{node: %PgQuery.Node{node: {:select_stmt, cte_select}}} ->
+            cte_query_length(cte_select)
+
+          _visit ->
+            {:error, :unsupported_ctequery}
+        end
+      },
+      %{
+        field: :cols,
+        node_type: :cols,
+        match?: fn %Visit{parent: parent} -> is_struct(parent, PgQuery.InsertStmt) end,
+        length: fn %Visit{node: node} -> cols_length(node) end
+      }
+    ]
+  end
+
+  defp query_length(tree) do
+    with {:ok, output} <- Protobuf.to_sql(tree) do
+      fixed_output = fix_output(output)
+      {:ok, {String.length(fixed_output), fixed_output}}
+    end
+  end
+
+  defp fix_output(output) do
+    output
+    |> String.replace("SELECT WHERE #{@placeholder}", @short_ellipsis)
+    |> String.replace(~s|SELECT WHERE "#{@placeholder}"|, @short_ellipsis)
+    |> String.replace(~s|"#{@placeholder}"|, @short_ellipsis)
+    |> String.replace(@placeholder, @short_ellipsis)
+  end
+
+  defp hard_truncate(_output, max_length) when max_length <= 0, do: ""
+
+  defp hard_truncate(_output, max_length) when max_length <= @short_ellipsis_length do
+    String.slice(@short_ellipsis, 0, max_length)
+  end
+
+  defp hard_truncate(output, max_length) do
+    keep_length = max(max_length - @short_ellipsis_length, 0)
+    String.slice(output, 0, keep_length) <> @short_ellipsis
+  end
+
   defp select_target_list_length(node) do
     with {:ok, query} <-
            Protobuf.stmt_to_sql(%PgQuery.SelectStmt{
@@ -233,7 +266,6 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  # Calculates the length of an UPDATE target list when rendered.
   defp update_target_list_length(node) do
     with {:ok, query} <-
            Protobuf.stmt_to_sql(%PgQuery.UpdateStmt{
@@ -262,7 +294,6 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  # Calculates the length of a WHERE clause when rendered.
   defp where_clause_length(node) do
     case Protobuf.expr_to_sql(node) do
       {:ok, expr} -> {:ok, String.length(expr)}
@@ -270,7 +301,6 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  # Calculates the length of VALUES lists when rendered.
   defp select_values_lists_length(node) do
     with {:ok, query} <-
            Protobuf.stmt_to_sql(%PgQuery.SelectStmt{
@@ -285,7 +315,6 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  # Calculates the length of a CTE query when rendered.
   defp cte_query_length(node) do
     case Protobuf.stmt_to_sql(node) do
       {:ok, expr} -> {:ok, String.length(expr)}
@@ -293,7 +322,6 @@ defmodule ExPgQuery.Truncator do
     end
   end
 
-  # Calculates the length of column definitions when rendered.
   defp cols_length(node) do
     with {:ok, query} <-
            Protobuf.stmt_to_sql(%PgQuery.InsertStmt{
@@ -306,146 +334,5 @@ defmodule ExPgQuery.Truncator do
        |> String.replace_trailing(") DEFAULT VALUES", "")
        |> String.length()}
     end
-  end
-
-  # Walks the AST looking for nodes that could potentially be truncated.
-  # For each candidate, calculates how long that part of the query is when rendered
-  # as a string, to prioritize which parts to truncate first.
-  defp find_possible_truncations(tree) do
-    TreeWalker.walk(tree, [], fn parent_node, field_name, {node, location}, acc ->
-      case {field_name, node} do
-        # Target lists in SELECT/UPDATE/ON CONFLICT statements
-        {:target_list, node}
-        when is_struct(parent_node, PgQuery.SelectStmt) or
-               is_struct(parent_node, PgQuery.UpdateStmt) or
-               is_struct(parent_node, PgQuery.OnConflictClause) ->
-          length_result =
-            case parent_node do
-              %PgQuery.SelectStmt{} -> select_target_list_length(node)
-              _ -> update_target_list_length(node)
-            end
-
-          case length_result do
-            {:ok, length} ->
-              [
-                %PossibleTruncation{
-                  parent_node: parent_node,
-                  location: location,
-                  node_type: :target_list,
-                  length: length
-                }
-                | acc
-              ]
-
-            {:error, _} ->
-              acc
-          end
-
-        # GROUP BY clause
-        {:group_clause, node} ->
-          case group_clause_length(node) do
-            {:ok, length} ->
-              [
-                %PossibleTruncation{
-                  parent_node: parent_node,
-                  location: location,
-                  node_type: :group_clause,
-                  length: length
-                }
-                | acc
-              ]
-
-            {:error, _} ->
-              acc
-          end
-
-        # WHERE clauses in various statement types
-        {:where_clause, node}
-        when is_struct(parent_node, PgQuery.SelectStmt) or
-               is_struct(parent_node, PgQuery.UpdateStmt) or
-               is_struct(parent_node, PgQuery.DeleteStmt) or
-               is_struct(parent_node, PgQuery.CopyStmt) or
-               is_struct(parent_node, PgQuery.IndexStmt) or
-               is_struct(parent_node, PgQuery.RuleStmt) or
-               is_struct(parent_node, PgQuery.InferClause) or
-               is_struct(parent_node, PgQuery.OnConflictClause) ->
-          case where_clause_length(node) do
-            {:ok, length} ->
-              [
-                %PossibleTruncation{
-                  parent_node: parent_node,
-                  location: location,
-                  node_type: :where_clause,
-                  length: length
-                }
-                | acc
-              ]
-
-            {:error, _} ->
-              acc
-          end
-
-        # VALUES lists (usually in INSERT statements)
-        {:values_lists, [_ | _] = node} ->
-          case select_values_lists_length(node) do
-            {:ok, length} ->
-              [
-                %PossibleTruncation{
-                  parent_node: parent_node,
-                  location: location,
-                  node_type: :values_lists,
-                  length: length
-                }
-                | acc
-              ]
-
-            {:error, _} ->
-              acc
-          end
-
-        # Common Table Expression (CTE) queries
-        {:ctequery,
-         %PgQuery.Node{
-           node: {:select_stmt, cte_select}
-         }}
-        when is_struct(parent_node, PgQuery.CommonTableExpr) ->
-          case cte_query_length(cte_select) do
-            {:ok, length} ->
-              [
-                %PossibleTruncation{
-                  parent_node: parent_node,
-                  location: location,
-                  node_type: :ctequery,
-                  length: length
-                }
-                | acc
-              ]
-
-            {:error, _} ->
-              acc
-          end
-
-        # Column definitions in INSERT statements
-        {:cols, node} when is_struct(parent_node, PgQuery.InsertStmt) ->
-          case cols_length(node) do
-            {:ok, length} ->
-              [
-                %PossibleTruncation{
-                  parent_node: parent_node,
-                  location: location,
-                  node_type: :cols,
-                  length: length
-                }
-                | acc
-              ]
-
-            {:error, _} ->
-              acc
-          end
-
-        _field_name ->
-          acc
-      end
-    end)
   end
 end

@@ -85,7 +85,8 @@ defmodule ExPgQuery.Protobuf do
 
   """
   def to_sql(%PgQuery.ParseResult{} = protobuf) do
-    binary_protobuf = Protox.encode!(protobuf) |> IO.iodata_to_binary()
+    {iodata, _size} = Protox.encode!(protobuf)
+    binary_protobuf = IO.iodata_to_binary(iodata)
     ExPgQuery.Native.deparse_protobuf(binary_protobuf)
   end
 
@@ -145,7 +146,10 @@ defmodule ExPgQuery.Protobuf do
   """
   def stmt_to_sql(stmt) do
     %{name: oneof_name} =
-      PgQuery.Node.fields_defs() |> Enum.find(&(&1.type == {:message, stmt.__struct__}))
+      PgQuery.Node.schema().fields
+      |> Map.values()
+      |> Enum.sort_by(& &1.tag)
+      |> Enum.find(&(&1.type == {:message, stmt.__struct__}))
 
     protobuf =
       %PgQuery.ParseResult{

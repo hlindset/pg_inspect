@@ -39,7 +39,7 @@ defmodule ExPgQuery.Native do
       iex> {:ok, bytes} = ExPgQuery.Native.parse_protobuf("SELECT * FROM users")
       iex> is_binary(bytes)
       true
-      iex> {:ok, result} = Protox.decode(bytes, PgQuery.ParseResult)
+      iex> {:ok, _result} = Protox.decode(bytes, PgQuery.ParseResult)
 
   """
   def parse_protobuf(_), do: exit(:nif_library_not_loaded)
@@ -111,7 +111,7 @@ defmodule ExPgQuery.Native do
       iex> {:ok, bytes} = ExPgQuery.Native.scan("SELECT * FROM users")
       iex> is_binary(bytes)
       true
-      iex> {:ok, result} = Protox.decode(bytes, PgQuery.ScanResult)
+      iex> {:ok, _result} = Protox.decode(bytes, PgQuery.ScanResult)
 
   """
   def scan(_), do: exit(:nif_library_not_loaded)
