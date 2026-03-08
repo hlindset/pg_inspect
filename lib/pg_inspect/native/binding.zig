@@ -16,6 +16,7 @@ fn error_message(err: anyerror) []const u8 {
         error.ContainsNullByte => "argument must not contain null bytes",
         error.InputSizeTooLarge => "input size too large",
         error.AllocationFailed => "memory allocation failed",
+        error.OutOfMemory => "memory allocation failed",
         error.InvalidProtobufMessage => "invalid protobuf message format",
         else => "unexpected error",
     };
