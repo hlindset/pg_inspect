@@ -7,24 +7,8 @@ const c = @cImport({
     @cInclude("protobuf-c/protobuf-c.h");
 });
 
-// Zig's imported Erlang NIF signature for enif_make_uint64 was not portable
-// across the precompile target matrix, so this C shim provides a stable call.
-extern fn pginspect_make_uint64(env: beam.env, value: u64) e.ErlNifTerm;
-
 const max_sql_length: usize = 16 * 1024 * 1024;
 const max_protobuf_length: usize = 32 * 1024 * 1024;
-
-fn atom(env: beam.env, name: [*:0]const u8) e.ErlNifTerm {
-    return e.enif_make_atom(env, name);
-}
-
-fn ok_term(env: beam.env, value: e.ErlNifTerm) beam.term {
-    return .{ .v = e.enif_make_tuple2(env, atom(env, "ok"), value) };
-}
-
-fn error_term(env: beam.env, value: e.ErlNifTerm) beam.term {
-    return .{ .v = e.enif_make_tuple2(env, atom(env, "error"), value) };
-}
 
 fn error_message(err: anyerror) []const u8 {
     return switch (err) {
@@ -33,32 +17,16 @@ fn error_message(err: anyerror) []const u8 {
         error.InputSizeTooLarge => "input size too large",
         error.AllocationFailed => "memory allocation failed",
         error.InvalidProtobufMessage => "invalid protobuf message format",
-        error.ErrorMapCreationFailed => "failed to create error map",
-        error.ResultMapCreationFailed => "failed to create result map",
         else => "unexpected error",
     };
 }
 
-fn make_binary(env: beam.env, bytes: []const u8) beam.term {
-    var binary: e.ErlNifTerm = undefined;
-
-    // Allocate a BEAM-managed binary and copy the result into it so the term
-    // outlives any temporary C buffers returned by libpg_query.
-    const data = e.enif_make_new_binary(env, bytes.len, &binary);
-
-    if (bytes.len > 0) {
-        @memcpy(data[0..bytes.len], bytes);
-    }
-
-    return .{ .v = binary };
-}
-
 fn make_error(env: beam.env, message: []const u8) beam.term {
-    return error_term(env, make_binary(env, message).v);
+    return beam.make(.{ .@"error", message }, .{ .env = env });
 }
 
 fn ok_binary(env: beam.env, bytes: []const u8) beam.term {
-    return ok_term(env, make_binary(env, bytes).v);
+    return beam.make(.{ .ok, bytes }, .{ .env = env });
 }
 
 fn c_string_slice(ptr: [*c]const u8) []const u8 {
@@ -111,31 +79,17 @@ fn make_c_string(input: []const u8) ![*:0]u8 {
     return @as([*:0]u8, @ptrCast(str));
 }
 
-fn put_error_map_value(env: beam.env, map: *e.ErlNifTerm, key: [*:0]const u8, value: e.ErlNifTerm) !void {
-    if (e.enif_make_map_put(env, map.*, atom(env, key), value, map) == 0) {
-        return error.ErrorMapCreationFailed;
-    }
-}
-
-fn put_result_map_value(env: beam.env, map: *e.ErlNifTerm, key: [*:0]const u8, value: e.ErlNifTerm) !void {
-    if (e.enif_make_map_put(env, map.*, atom(env, key), value, map) == 0) {
-        return error.ResultMapCreationFailed;
-    }
-}
-
 fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) !beam.term {
-    var error_map = e.enif_make_new_map(env);
-    const message_binary = make_binary(env, pg_query_error_message(err));
-
-    try put_error_map_value(env, &error_map, "message", message_binary.v);
-    try put_error_map_value(
-        env,
-        &error_map,
-        "cursorpos",
-        e.enif_make_int(env, err[0].cursorpos - 1),
+    return beam.make(
+        .{
+            .@"error",
+            .{
+                .message = pg_query_error_message(err),
+                .cursorpos = err[0].cursorpos - 1,
+            },
+        },
+        .{ .env = env },
     );
-
-    return error_term(env, error_map);
 }
 
 fn parse_error_term(env: beam.env, err: [*c]const c.PgQueryError) beam.term {
@@ -213,23 +167,16 @@ pub fn fingerprint(query: []const u8) beam.term {
         return make_error(env, pg_query_error_message(&result.@"error"[0]));
     }
 
-    var map = e.enif_make_new_map(env);
-    const fingerprint_str = make_binary(env, c_string_slice(result.fingerprint_str));
-
-    put_result_map_value(
-        env,
-        &map,
-        "fingerprint",
-        pginspect_make_uint64(env, result.fingerprint),
-    ) catch |err| return beam_error(env, err);
-    put_result_map_value(
-        env,
-        &map,
-        "fingerprint_str",
-        fingerprint_str.v,
-    ) catch |err| return beam_error(env, err);
-
-    return ok_term(env, map);
+    return beam.make(
+        .{
+            .ok,
+            .{
+                .fingerprint = result.fingerprint,
+                .fingerprint_str = c_string_slice(result.fingerprint_str),
+            },
+        },
+        .{ .env = env },
+    );
 }
 
 /// Scans SQL into libpg_query's protobuf token stream.
