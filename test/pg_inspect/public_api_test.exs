@@ -1,6 +1,8 @@
 defmodule PgInspect.PublicApiTest do
   use ExUnit.Case
 
+  alias PgInspect.AnalysisResult
+
   describe "raw AST entry points" do
     test "parse/1 returns a raw parse result" do
       assert {:ok, %PgQuery.ParseResult{} = ast} = PgInspect.parse("SELECT * FROM users")
@@ -13,6 +15,24 @@ defmodule PgInspect.PublicApiTest do
       assert {:ok, analyzed} = PgInspect.analyze(ast)
       assert PgInspect.tables(analyzed) == ["users"]
       assert PgInspect.parameter_references(analyzed) == [%{location: 31, length: 2}]
+    end
+
+    test "bang wrappers succeed for valid inputs" do
+      ast = PgInspect.parse!("WITH active_users AS (SELECT * FROM users) SELECT * FROM active_users")
+
+      assert "WITH active_users AS (SELECT * FROM users) SELECT * FROM active_users" ==
+               PgInspect.deparse!(ast)
+
+      analyzed = PgInspect.analyze!(ast)
+
+      assert PgInspect.cte_names(analyzed) == ["active_users"]
+      assert PgInspect.statement_types(analyzed) == [:select_stmt]
+    end
+
+    test "analyze!/1 raises on invalid SQL" do
+      assert_raise RuntimeError, ~r/Analysis error:/, fn ->
+        PgInspect.analyze!("SELECT FROM")
+      end
     end
   end
 
@@ -30,6 +50,20 @@ defmodule PgInspect.PublicApiTest do
         PgInspect.analyze!("SELECT id, name, email FROM users WHERE active = true")
 
       assert {:ok, "SELECT ... FROM users WHERE ..."} = PgInspect.truncate(analyzed, 32)
+      assert PgInspect.truncate!(analyzed, 32) == "SELECT ... FROM users WHERE ..."
+    end
+
+    test "returns an error when analyzed results do not keep a raw ast" do
+      analyzed = PgInspect.analyze!("SELECT * FROM users WHERE id = ?")
+
+      assert analyzed.raw_ast == nil
+      assert {:error, :missing_raw_ast} = PgInspect.truncate(analyzed, 20)
+    end
+
+    test "truncate!/2 raises when an analyzed result has no raw ast" do
+      assert_raise RuntimeError, ~r/Truncation error: :missing_raw_ast/, fn ->
+        PgInspect.truncate!(%AnalysisResult{}, 20)
+      end
     end
   end
 

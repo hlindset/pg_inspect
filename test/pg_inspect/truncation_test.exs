@@ -1,6 +1,8 @@
 defmodule PgInspect.TruncationTest do
   use ExUnit.Case
 
+  alias PgInspect.Internal.Truncator
+
   describe "truncate/2" do
     test "omits target list" do
       query = "SELECT a, b, c, d, e, f FROM xyz WHERE a = b"
@@ -137,6 +139,14 @@ defmodule PgInspect.TruncationTest do
       assert_truncate_eq(query, 20, "SELECT * FROM rea...")
     end
 
+    test "returns partial ellipses for very small limits" do
+      query = "SELECT * FROM really_really_really_really_long_table_name"
+
+      assert_truncate_eq(query, 0, "")
+      assert_truncate_eq(query, 2, "..")
+      assert_truncate_eq(query, 3, "...")
+    end
+
     test "handles multi-statement queries" do
       query = """
       BEGIN;
@@ -154,6 +164,22 @@ defmodule PgInspect.TruncationTest do
       )
 
       assert_truncate_length(query, trunc_length, trunc_length)
+    end
+  end
+
+  describe "truncate!/2" do
+    test "returns truncated SQL for valid parse trees" do
+      tree = PgInspect.parse!("SELECT id, name, email FROM users WHERE active = true")
+
+      assert Truncator.truncate!(tree, 32) == "SELECT ... FROM users WHERE ..."
+    end
+
+    test "raises on invalid parse trees" do
+      invalid_tree = %PgQuery.ParseResult{stmts: [%PgQuery.ColumnRef{}]}
+
+      assert_raise RuntimeError, ~r/Truncation error:/, fn ->
+        Truncator.truncate!(invalid_tree, 32)
+      end
     end
   end
 

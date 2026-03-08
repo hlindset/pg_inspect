@@ -126,5 +126,39 @@ defmodule PgInspect.Internal.ASTTest do
       assert {:error, {:non_traversable, 1, :a}} =
                AST.update(1, [:a], fn _ -> 2 end)
     end
+
+    test "updates tuple, map, and struct paths and supports bang helpers" do
+      assert {:ok, {:tag, %{value: 2}}} =
+               AST.update({:tag, %{value: 1}}, [:value], &(&1 + 1))
+
+      assert {:ok, %{outer: %{value: 2}}} =
+               AST.update(%{outer: %{value: 1}}, [:outer, :value], &(&1 + 1))
+
+      assert {:error, {:index_out_of_bounds, 2}} =
+               AST.update([1], [2], fn value -> value end)
+
+      assert {:error, {:missing_key, :missing}} =
+               AST.update(%URI{}, [:missing], fn value -> value end)
+
+      assert {:error, {:missing_key, :missing}} =
+               AST.update(%{value: 1}, [:missing], fn value -> value end)
+
+      assert AST.update!(%{outer: %{value: 1}}, [:outer, :value], &(&1 + 1)) ==
+               %{outer: %{value: 2}}
+
+      assert AST.put!(%{outer: %{value: 1}}, [:outer, :value], 3) == %{outer: %{value: 3}}
+    end
+
+    test "formats update errors for bang helpers" do
+      assert AST.format_error({:index_out_of_bounds, 2}) == "index 2 out of bounds"
+      assert AST.format_error({:missing_key, :field}) == "key field not found"
+
+      assert AST.format_error({:unexpected_node_type, :select_stmt, :update_stmt}) ==
+               "expected node type select_stmt but found update_stmt"
+
+      assert_raise ArgumentError, "cannot traverse segment :a through 1", fn ->
+        AST.update!(1, [:a], fn _ -> 2 end)
+      end
+    end
   end
 end

@@ -39,5 +39,42 @@ defmodule PgInspect.ParameterReferencesTest do
                %{location: 51, length: 11, typename: ["pg_catalog", "interval"]}
              ]
     end
+
+    test "rewrites only placeholder question marks and remaps locations to the original SQL" do
+      query = """
+      SELECT '?', "?", $tag$?$tag$, ?, ? -- comment ?
+      FROM users
+      WHERE note = 'still ?'
+      """
+
+      {:ok, analyzed} = PgInspect.analyze(query)
+      refs = PgInspect.parameter_references(analyzed)
+
+      assert analyzed.raw_ast == nil
+      assert Enum.map(refs, &Map.take(&1, [:length])) == [%{length: 1}, %{length: 1}]
+      assert Enum.map(refs, fn %{location: location, length: length} ->
+               binary_part(query, location, length)
+             end) == ["?", "?"]
+    end
+
+    test "does not rewrite question marks inside nested block comments" do
+      query = """
+      SELECT ?
+      /* outer ? /* inner ? */ still comment ? */
+      FROM users
+      WHERE id = ?
+      """
+
+      {:ok, analyzed} = PgInspect.analyze(query)
+
+      assert Enum.map(PgInspect.parameter_references(analyzed), fn %{location: location, length: length} ->
+               binary_part(query, location, length)
+             end) == ["?", "?"]
+    end
+
+    test "returns the original parse error when question marks appear only inside invalid quotes" do
+      assert {:error, %{message: message}} = PgInspect.analyze("SELECT '?")
+      assert message =~ "unterminated quoted string"
+    end
   end
 end
