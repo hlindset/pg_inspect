@@ -1,4 +1,4 @@
-defmodule ExPgQuery.Native do
+defmodule PgInspect.Native do
   @moduledoc """
   Provides native bindings to `libpg_query` C library functionality via NIFs.
 
@@ -14,8 +14,8 @@ defmodule ExPgQuery.Native do
   end
 
   defp load_nif do
-    :ex_pg_query
-    |> Application.app_dir("priv/ex_pg_query")
+    :pg_inspect
+    |> Application.app_dir("priv/pg_inspect")
     |> String.to_charlist()
     |> :erlang.load_nif(0)
   end
@@ -36,7 +36,7 @@ defmodule ExPgQuery.Native do
 
   ## Examples
 
-      iex> {:ok, bytes} = ExPgQuery.Native.parse_protobuf("SELECT * FROM users")
+      iex> {:ok, bytes} = PgInspect.Native.parse_protobuf("SELECT * FROM users")
       iex> is_binary(bytes)
       true
       iex> {:ok, _result} = Protox.decode(bytes, PgQuery.ParseResult)
@@ -58,8 +58,8 @@ defmodule ExPgQuery.Native do
 
   ## Examples
 
-      iex> {:ok, bytes} = ExPgQuery.Native.parse_protobuf("SELECT * FROM users")
-      iex> ExPgQuery.Native.deparse_protobuf(bytes)
+      iex> {:ok, bytes} = PgInspect.Native.parse_protobuf("SELECT * FROM users")
+      iex> PgInspect.Native.deparse_protobuf(bytes)
       {:ok, "SELECT * FROM users"}
 
   """
@@ -84,9 +84,9 @@ defmodule ExPgQuery.Native do
 
   ## Examples
 
-      iex> ExPgQuery.Native.fingerprint("SELECT * FROM users WHERE id = 1")
+      iex> PgInspect.Native.fingerprint("SELECT * FROM users WHERE id = 1")
       {:ok, %{fingerprint: 11595314936444286341, fingerprint_str: "a0ead580058af585"}}
-      iex> ExPgQuery.Native.fingerprint("SELECT * FROM users WHERE id = 2")
+      iex> PgInspect.Native.fingerprint("SELECT * FROM users WHERE id = 2")
       {:ok, %{fingerprint: 11595314936444286341, fingerprint_str: "a0ead580058af585"}}
 
   """
@@ -108,7 +108,7 @@ defmodule ExPgQuery.Native do
 
   ## Examples
 
-      iex> {:ok, bytes} = ExPgQuery.Native.scan("SELECT * FROM users")
+      iex> {:ok, bytes} = PgInspect.Native.scan("SELECT * FROM users")
       iex> is_binary(bytes)
       true
       iex> {:ok, _result} = Protox.decode(bytes, PgQuery.ScanResult)
@@ -133,16 +133,16 @@ defmodule ExPgQuery.Native do
 
   ## Examples
 
-      iex> ExPgQuery.Native.normalize("SELECT * FROM users WHERE id = 123")
+      iex> PgInspect.Native.normalize("SELECT * FROM users WHERE id = 123")
       {:ok, "SELECT * FROM users WHERE id = $1"}
 
-      iex> ExPgQuery.Native.normalize("SELECT a, SUM(b) FROM tbl WHERE c = 'foo' GROUP BY 1, 'bar'")
+      iex> PgInspect.Native.normalize("SELECT a, SUM(b) FROM tbl WHERE c = 'foo' GROUP BY 1, 'bar'")
       {:ok, "SELECT a, SUM(b) FROM tbl WHERE c = $1 GROUP BY 1, $2"}
 
-      iex> ExPgQuery.Native.normalize("SELECT * FROM users WHERE name = 'John' AND age > 25")
+      iex> PgInspect.Native.normalize("SELECT * FROM users WHERE name = 'John' AND age > 25")
       {:ok, "SELECT * FROM users WHERE name = $1 AND age > $2"}
 
-      iex> ExPgQuery.Native.normalize("CREATE ROLE postgres PASSWORD 'xyz'")
+      iex> PgInspect.Native.normalize("CREATE ROLE postgres PASSWORD 'xyz'")
       {:ok, "CREATE ROLE postgres PASSWORD $1"}
 
   """

@@ -1,32 +1,32 @@
-defmodule ExPgQuery.ProtobufTest do
+defmodule PgInspect.ProtobufTest do
   use ExUnit.Case
 
-  doctest ExPgQuery.Protobuf
+  doctest PgInspect.Protobuf
 
   describe "from_sql/1" do
     test "successfully parses valid SQL" do
       query = "SELECT * FROM users WHERE id = 1"
-      assert {:ok, result} = ExPgQuery.Protobuf.from_sql(query)
+      assert {:ok, result} = PgInspect.Protobuf.from_sql(query)
       assert %PgQuery.ParseResult{} = result
     end
 
     test "returns error for invalid SQL" do
       query = "SELECT * FREM users"
-      assert {:error, _} = ExPgQuery.Protobuf.from_sql(query)
+      assert {:error, _} = PgInspect.Protobuf.from_sql(query)
     end
   end
 
   describe "from_sql!/1" do
     test "returns ParseResult for valid SQL" do
       query = "SELECT * FROM users WHERE id = 1"
-      assert %PgQuery.ParseResult{} = ExPgQuery.Protobuf.from_sql!(query)
+      assert %PgQuery.ParseResult{} = PgInspect.Protobuf.from_sql!(query)
     end
 
     test "raises error for invalid SQL" do
       query = "SELECT * FREM users"
 
       assert_raise RuntimeError, ~r/Parse error:/, fn ->
-        ExPgQuery.Protobuf.from_sql!(query)
+        PgInspect.Protobuf.from_sql!(query)
       end
     end
   end
@@ -34,8 +34,8 @@ defmodule ExPgQuery.ProtobufTest do
   describe "deparse/1" do
     test "deparses ParseResult back to SQL" do
       original_query = "SELECT * FROM users WHERE id = 1"
-      {:ok, parse_result} = ExPgQuery.Protobuf.from_sql(original_query)
-      assert {:ok, deparsed} = ExPgQuery.Protobuf.to_sql(parse_result)
+      {:ok, parse_result} = PgInspect.Protobuf.from_sql(original_query)
+      assert {:ok, deparsed} = PgInspect.Protobuf.to_sql(parse_result)
       assert deparsed =~ "SELECT"
       assert deparsed =~ "FROM users"
       assert deparsed =~ "WHERE id = 1"
@@ -45,8 +45,8 @@ defmodule ExPgQuery.ProtobufTest do
   describe "deparse!/1" do
     test "deparses ParseResult back to SQL" do
       original_query = "SELECT * FROM users WHERE id = 1"
-      parse_result = ExPgQuery.Protobuf.from_sql!(original_query)
-      assert deparsed = ExPgQuery.Protobuf.to_sql!(parse_result)
+      parse_result = PgInspect.Protobuf.from_sql!(original_query)
+      assert deparsed = PgInspect.Protobuf.to_sql!(parse_result)
       assert deparsed =~ "SELECT"
       assert deparsed =~ "FROM users"
       assert deparsed =~ "WHERE id = 1"
@@ -54,7 +54,7 @@ defmodule ExPgQuery.ProtobufTest do
 
     test "raises error for invalid protobuf" do
       assert_raise RuntimeError, ~r/Deparse error:/, fn ->
-        ExPgQuery.Protobuf.to_sql!(%PgQuery.ParseResult{stmts: [%PgQuery.ColumnRef{}]})
+        PgInspect.Protobuf.to_sql!(%PgQuery.ParseResult{stmts: [%PgQuery.ColumnRef{}]})
       end
     end
   end
@@ -93,7 +93,7 @@ defmodule ExPgQuery.ProtobufTest do
         ]
       }
 
-      assert {:ok, query} = ExPgQuery.Protobuf.stmt_to_sql(stmt)
+      assert {:ok, query} = PgInspect.Protobuf.stmt_to_sql(stmt)
       assert query =~ "SELECT * FROM users"
     end
   end
@@ -122,7 +122,7 @@ defmodule ExPgQuery.ProtobufTest do
            }}
       }
 
-      assert {:ok, result} = ExPgQuery.Protobuf.expr_to_sql(expr)
+      assert {:ok, result} = PgInspect.Protobuf.expr_to_sql(expr)
       assert result == "id = 1"
     end
   end
@@ -130,8 +130,8 @@ defmodule ExPgQuery.ProtobufTest do
   describe "roundtrip parsing and deparsing" do
     test "with simple SELECT query" do
       query = "SELECT * FROM users WHERE active = true"
-      {:ok, parsed} = ExPgQuery.Protobuf.from_sql(query)
-      {:ok, deparsed} = ExPgQuery.Protobuf.to_sql(parsed)
+      {:ok, parsed} = PgInspect.Protobuf.from_sql(query)
+      {:ok, deparsed} = PgInspect.Protobuf.to_sql(parsed)
       assert deparsed =~ "SELECT"
       assert deparsed =~ "FROM users"
       assert deparsed =~ "WHERE active = true"
@@ -149,8 +149,8 @@ defmodule ExPgQuery.ProtobufTest do
       LIMIT 10
       """
 
-      {:ok, parsed} = ExPgQuery.Protobuf.from_sql(query)
-      {:ok, deparsed} = ExPgQuery.Protobuf.to_sql(parsed)
+      {:ok, parsed} = PgInspect.Protobuf.from_sql(query)
+      {:ok, deparsed} = PgInspect.Protobuf.to_sql(parsed)
 
       assert deparsed == query |> String.replace("\n", " ") |> String.trim()
     end

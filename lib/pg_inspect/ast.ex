@@ -1,4 +1,4 @@
-defmodule ExPgQuery.Internal.AST do
+defmodule PgInspect.Internal.AST do
   @moduledoc false
 
   @type path_segment :: atom() | non_neg_integer()
@@ -399,7 +399,7 @@ defmodule ExPgQuery.Internal.AST do
     defstruct [:analysis, :field, :node, :parent, :path]
 
     @type t :: %__MODULE__{
-            analysis: ExPgQuery.Internal.AST.Analysis.t(),
+            analysis: PgInspect.Internal.AST.Analysis.t(),
             field: atom() | non_neg_integer(),
             node: term(),
             parent: term(),

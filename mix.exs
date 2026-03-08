@@ -1,11 +1,11 @@
-defmodule ExPgQuery.MixProject do
+defmodule PgInspect.MixProject do
   use Mix.Project
 
   @version "0.1.0"
 
   def project do
     [
-      app: :ex_pg_query,
+      app: :pg_inspect,
       version: @version,
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
@@ -18,25 +18,25 @@ defmodule ExPgQuery.MixProject do
       make_makefile: "Makefile",
       make_precompiler: {:nif, CCPrecompiler},
       make_precompiler_url:
-        "https://github.com/hlindset/ex_pg_query/releases/download/v#{@version}/@{artefact_filename}",
-      make_precompiler_priv_paths: ["ex_pg_query.*"],
+        "https://github.com/hlindset/pg_inspect/releases/download/v#{@version}/@{artefact_filename}",
+      make_precompiler_priv_paths: ["pg_inspect.*"],
       make_precompiler_nif_versions: [versions: ["2.16", "2.17"]],
       make_precompiler_unavailable_target: :compile,
       # Docs
-      name: "ExPgQuery",
-      source_url: "https://github.com/hlindset/ex_pg_query",
+      name: "PgInspect",
+      source_url: "https://github.com/hlindset/pg_inspect",
       docs: &docs/0
     ]
   end
 
   defp package do
     [
-      name: "ex_pg_query",
+      name: "pg_inspect",
       licenses: ["MIT", "Apache-2.0"],
-      source_url: "https://github.com/hlindset/ex_pg_query",
-      homepage_url: "https://github.com/hlindset/ex_pg_query",
+      source_url: "https://github.com/hlindset/pg_inspect",
+      homepage_url: "https://github.com/hlindset/pg_inspect",
       links: %{
-        "GitHub" => "https://github.com/hlindset/ex_pg_query"
+        "GitHub" => "https://github.com/hlindset/pg_inspect"
       },
       files: ~w(lib priv .formatter.exs mix.exs README* LICENSE*
         CHANGELOG* src checksum.exs)

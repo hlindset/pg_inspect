@@ -1,9 +1,9 @@
-defmodule ExPgQuery.Internal.Truncator do
+defmodule PgInspect.Internal.Truncator do
   @moduledoc false
 
-  alias ExPgQuery.Internal.AST
-  alias ExPgQuery.Internal.AST.Visit
-  alias ExPgQuery.Protobuf
+  alias PgInspect.Internal.AST
+  alias PgInspect.Internal.AST.Visit
+  alias PgInspect.Protobuf
 
   defmodule PossibleTruncation do
     @moduledoc false
@@ -12,7 +12,7 @@ defmodule ExPgQuery.Internal.Truncator do
   end
 
   @short_ellipsis "..."
-  @placeholder "__ex_pg_query_truncation_sentinel__"
+  @placeholder "__pg_inspect_truncation_sentinel__"
   @short_ellipsis_length String.length(@short_ellipsis)
 
   @dummy_column_ref %PgQuery.Node{

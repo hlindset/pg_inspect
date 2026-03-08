@@ -1,41 +1,41 @@
-defmodule ExPgQuery do
+defmodule PgInspect do
   @moduledoc """
   High-level PostgreSQL query parsing, analysis, and truncation helpers.
 
-  `ExPgQuery` exposes two public layers:
+  `PgInspect` exposes two public layers:
 
   - raw AST I/O with `parse/1` and `deparse/1`
   - analyzed-query helpers with `analyze/1` and accessor functions over
-    `ExPgQuery.AnalysisResult`
+    `PgInspect.AnalysisResult`
 
   ## Examples
 
-      iex> {:ok, ast} = ExPgQuery.parse("SELECT * FROM users WHERE id = $1")
+      iex> {:ok, ast} = PgInspect.parse("SELECT * FROM users WHERE id = $1")
       iex> match?(%PgQuery.ParseResult{}, ast)
       true
 
-      iex> {:ok, analyzed} = ExPgQuery.analyze("SELECT count(*) FROM users WHERE id = $1")
-      iex> ExPgQuery.tables(analyzed)
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT count(*) FROM users WHERE id = $1")
+      iex> PgInspect.tables(analyzed)
       ["users"]
-      iex> ExPgQuery.functions(analyzed)
+      iex> PgInspect.functions(analyzed)
       ["count"]
-      iex> ExPgQuery.parameter_references(analyzed)
+      iex> PgInspect.parameter_references(analyzed)
       [%{location: 38, length: 2}]
 
-      iex> {:ok, analyzed} = ExPgQuery.analyze("SELECT * INTO recent_films FROM films")
-      iex> ExPgQuery.ddl_tables(analyzed)
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT * INTO recent_films FROM films")
+      iex> PgInspect.ddl_tables(analyzed)
       ["recent_films"]
-      iex> ExPgQuery.select_tables(analyzed)
+      iex> PgInspect.select_tables(analyzed)
       ["films"]
 
-      iex> ExPgQuery.truncate("SELECT id, name, email FROM users WHERE active = true", 32)
+      iex> PgInspect.truncate("SELECT id, name, email FROM users WHERE active = true", 32)
       {:ok, "SELECT ... FROM users WHERE ..."}
   """
 
-  alias ExPgQuery.AnalysisResult
-  alias ExPgQuery.Internal.Analysis
-  alias ExPgQuery.Internal.Truncator
-  alias ExPgQuery.Protobuf
+  alias PgInspect.AnalysisResult
+  alias PgInspect.Internal.Analysis
+  alias PgInspect.Internal.Truncator
+  alias PgInspect.Protobuf
 
   @type sql :: String.t()
   @type raw_ast :: PgQuery.ParseResult.t()
@@ -47,7 +47,7 @@ defmodule ExPgQuery do
 
   ## Examples
 
-      iex> {:ok, ast} = ExPgQuery.parse("SELECT * FROM users")
+      iex> {:ok, ast} = PgInspect.parse("SELECT * FROM users")
       iex> match?(%PgQuery.ParseResult{}, ast)
       true
   """
@@ -65,8 +65,8 @@ defmodule ExPgQuery do
 
   ## Examples
 
-      iex> ast = ExPgQuery.parse!("SELECT * FROM users")
-      iex> ExPgQuery.deparse(ast)
+      iex> ast = PgInspect.parse!("SELECT * FROM users")
+      iex> PgInspect.deparse(ast)
       {:ok, "SELECT * FROM users"}
   """
   @spec deparse(raw_ast()) :: {:ok, sql()} | {:error, term()}
@@ -79,19 +79,19 @@ defmodule ExPgQuery do
   def deparse!(%PgQuery.ParseResult{} = ast), do: Protobuf.to_sql!(ast)
 
   @doc """
-  Builds an `ExPgQuery.AnalysisResult` from SQL text or a raw AST.
+  Builds an `PgInspect.AnalysisResult` from SQL text or a raw AST.
 
   ## Examples
 
-      iex> {:ok, analyzed} = ExPgQuery.analyze("SELECT u.name FROM users u WHERE u.id = $1")
-      iex> ExPgQuery.table_aliases(analyzed)
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT u.name FROM users u WHERE u.id = $1")
+      iex> PgInspect.table_aliases(analyzed)
       [%{alias: "u", location: 19, relation: "users", schema: nil}]
-      iex> ExPgQuery.filter_columns(analyzed)
+      iex> PgInspect.filter_columns(analyzed)
       [{"users", "id"}]
 
-      iex> ast = ExPgQuery.parse!("SELECT * FROM posts")
-      iex> {:ok, analyzed} = ExPgQuery.analyze(ast)
-      iex> ExPgQuery.statement_types(analyzed)
+      iex> ast = PgInspect.parse!("SELECT * FROM posts")
+      iex> {:ok, analyzed} = PgInspect.analyze(ast)
+      iex> PgInspect.statement_types(analyzed)
       [:select_stmt]
   """
   @spec analyze(analyze_input()) :: {:ok, AnalysisResult.t()} | {:error, term()}
@@ -228,8 +228,8 @@ defmodule ExPgQuery do
 
   ## Examples
 
-      iex> {:ok, analyzed} = ExPgQuery.analyze("SELECT * FROM users WHERE name = 'very long name'")
-      iex> ExPgQuery.truncate(analyzed, 30)
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT * FROM users WHERE name = 'very long name'")
+      iex> PgInspect.truncate(analyzed, 30)
       {:ok, "SELECT * FROM users WHERE ..."}
   """
   @spec truncate(truncate_input(), integer()) :: {:ok, sql()} | {:error, term()}

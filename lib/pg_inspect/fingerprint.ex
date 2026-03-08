@@ -1,4 +1,4 @@
-defmodule ExPgQuery.Fingerprint do
+defmodule PgInspect.Fingerprint do
   @moduledoc """
   Generates fingerprints to identify structurally equivalent SQL queries.
 
@@ -7,9 +7,9 @@ defmodule ExPgQuery.Fingerprint do
 
   ## Examples
 
-      iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 1")
+      iex> PgInspect.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 1")
       {:ok, "a0ead580058af585"}
-      iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 2")
+      iex> PgInspect.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 2")
       {:ok, "a0ead580058af585"}
 
   The above queries generate the same fingerprint since they are structurally
@@ -32,14 +32,14 @@ defmodule ExPgQuery.Fingerprint do
 
   ## Examples
 
-      iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 1")
+      iex> PgInspect.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 1")
       {:ok, "a0ead580058af585"}
-      iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 2")
+      iex> PgInspect.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 2")
       {:ok, "a0ead580058af585"}
 
   """
   def fingerprint(sql) do
-    case ExPgQuery.Native.fingerprint(sql) do
+    case PgInspect.Native.fingerprint(sql) do
       {:ok, %{fingerprint_str: fingerprint}} -> {:ok, fingerprint}
       {:error, _reason} = err -> err
     end

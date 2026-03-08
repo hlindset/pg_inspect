@@ -1,6 +1,6 @@
-defmodule ExPgQuery.AnalysisResult do
+defmodule PgInspect.AnalysisResult do
   @moduledoc """
-  Result returned by `ExPgQuery.analyze/1`.
+  Result returned by `PgInspect.analyze/1`.
 
   The supported analysis fields are:
 

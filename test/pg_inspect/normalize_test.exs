@@ -1,9 +1,9 @@
-defmodule ExPgQuery.NormalizeTest do
+defmodule PgInspect.NormalizeTest do
   use ExUnit.Case
 
-  alias ExPgQuery.Normalize
+  alias PgInspect.Normalize
 
-  doctest ExPgQuery.Normalize
+  doctest PgInspect.Normalize
 
   describe "normalize" do
     test "normalizes a simple query" do

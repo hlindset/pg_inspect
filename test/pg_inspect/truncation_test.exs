@@ -1,4 +1,4 @@
-defmodule ExPgQuery.TruncationTest do
+defmodule PgInspect.TruncationTest do
   use ExUnit.Case
 
   describe "truncate/2" do
@@ -158,12 +158,12 @@ defmodule ExPgQuery.TruncationTest do
   end
 
   defp assert_truncate_eq(query, truncate_length, expected) do
-    assert {:ok, result} = ExPgQuery.truncate(query, truncate_length)
+    assert {:ok, result} = PgInspect.truncate(query, truncate_length)
     assert result == expected
   end
 
   defp assert_truncate_length(query, truncate_length, expected) do
-    assert {:ok, result} = ExPgQuery.truncate(query, truncate_length)
+    assert {:ok, result} = PgInspect.truncate(query, truncate_length)
     assert String.length(result) == expected
   end
 end

@@ -1,9 +1,9 @@
-defmodule ExPgQuery.FingerprintTest do
+defmodule PgInspect.FingerprintTest do
   use ExUnit.Case
 
-  alias ExPgQuery.Fingerprint
+  alias PgInspect.Fingerprint
 
-  doctest ExPgQuery.Fingerprint
+  doctest PgInspect.Fingerprint
 
   defp fingerprint(query) do
     {:ok, result} = Fingerprint.fingerprint(query)
@@ -12,7 +12,7 @@ defmodule ExPgQuery.FingerprintTest do
 
   describe "fingerprint" do
     test "fingerprint data cases" do
-      for %{input: input, expected_hash: expected_hash} <- ExPgQuery.TestData.fingerprints() do
+      for %{input: input, expected_hash: expected_hash} <- PgInspect.TestData.fingerprints() do
         assert fingerprint(input) == expected_hash
       end
     end

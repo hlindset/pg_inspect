@@ -1,11 +1,11 @@
-defmodule ExPgQuery.Protobuf do
+defmodule PgInspect.Protobuf do
   @moduledoc """
   Handles conversion between SQL queries and Protocol Buffer AST representations.
 
   ## Examples
 
-      iex> {:ok, protobuf} = ExPgQuery.Protobuf.from_sql("SELECT * FROM users")
-      iex> ExPgQuery.Protobuf.to_sql(protobuf)
+      iex> {:ok, protobuf} = PgInspect.Protobuf.from_sql("SELECT * FROM users")
+      iex> PgInspect.Protobuf.to_sql(protobuf)
       {:ok, "SELECT * FROM users"}
   """
 
@@ -29,12 +29,12 @@ defmodule ExPgQuery.Protobuf do
 
   ## Examples
 
-      iex> parsed = ExPgQuery.Protobuf.from_sql("SELECT * FROM users")
+      iex> parsed = PgInspect.Protobuf.from_sql("SELECT * FROM users")
       {:ok, %PgQuery.ParseResult{}} = parsed
 
   """
   def from_sql(query) do
-    with {:ok, binary} <- ExPgQuery.Native.parse_protobuf(query),
+    with {:ok, binary} <- PgInspect.Native.parse_protobuf(query),
          {:ok, protobuf} <- Protox.decode(binary, PgQuery.ParseResult) do
       {:ok, protobuf}
     else
@@ -79,15 +79,15 @@ defmodule ExPgQuery.Protobuf do
 
   ## Examples
 
-      iex> parsed = ExPgQuery.Protobuf.from_sql!("SELECT * FROM users")
-      iex> ExPgQuery.Protobuf.to_sql(parsed)
+      iex> parsed = PgInspect.Protobuf.from_sql!("SELECT * FROM users")
+      iex> PgInspect.Protobuf.to_sql(parsed)
       {:ok, "SELECT * FROM users"}
 
   """
   def to_sql(%PgQuery.ParseResult{} = protobuf) do
     {iodata, _size} = Protox.encode!(protobuf)
     binary_protobuf = IO.iodata_to_binary(iodata)
-    ExPgQuery.Native.deparse_protobuf(binary_protobuf)
+    PgInspect.Native.deparse_protobuf(binary_protobuf)
   end
 
   @doc """
@@ -139,8 +139,8 @@ defmodule ExPgQuery.Protobuf do
       ...>       }
       ...>     }
       ...>   ]
-      ...> } = ExPgQuery.Protobuf.from_sql!("SELECT * FROM users")
-      iex> ExPgQuery.Protobuf.stmt_to_sql(select_stmt)
+      ...> } = PgInspect.Protobuf.from_sql!("SELECT * FROM users")
+      iex> PgInspect.Protobuf.stmt_to_sql(select_stmt)
       {:ok, "SELECT * FROM users"}
 
   """

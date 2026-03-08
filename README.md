@@ -1,4 +1,4 @@
-# ExPgQuery
+# PgInspect
 
 Elixir library with a C NIF for parsing PostgreSQL queries. It uses
 [pganalyze/libpg_query](https://github.com/pganalyze/libpg_query) for parsing,
@@ -21,11 +21,11 @@ Not published to Hex yet.
 ### Raw AST I/O
 
 ```elixir
-iex> {:ok, ast} = ExPgQuery.parse("SELECT * FROM users WHERE id = $1")
+iex> {:ok, ast} = PgInspect.parse("SELECT * FROM users WHERE id = $1")
 iex> match?(%PgQuery.ParseResult{}, ast)
 true
 
-iex> ExPgQuery.deparse(ast)
+iex> PgInspect.deparse(ast)
 {:ok, "SELECT * FROM users WHERE id = $1"}
 ```
 
@@ -33,24 +33,24 @@ iex> ExPgQuery.deparse(ast)
 
 ```elixir
 iex> {:ok, analyzed} =
-...>   ExPgQuery.analyze("""
+...>   PgInspect.analyze("""
 ...>   WITH recent_posts AS (SELECT * FROM posts WHERE author_id = $1)
 ...>   SELECT count(*) FROM recent_posts rp WHERE rp.inserted_at > $2::timestamptz
 ...>   """)
 
-iex> ExPgQuery.tables(analyzed)
+iex> PgInspect.tables(analyzed)
 ["posts"]
 
-iex> ExPgQuery.cte_names(analyzed)
+iex> PgInspect.cte_names(analyzed)
 ["recent_posts"]
 
-iex> ExPgQuery.functions(analyzed)
+iex> PgInspect.functions(analyzed)
 ["count"]
 
-iex> ExPgQuery.filter_columns(analyzed)
+iex> PgInspect.filter_columns(analyzed)
 [{"posts", "author_id"}, {"recent_posts", "inserted_at"}]
 
-iex> ExPgQuery.parameter_references(analyzed)
+iex> PgInspect.parameter_references(analyzed)
 [
   %{location: 56, length: 2},
   %{location: 111, length: 2, typename: ["timestamptz"]}
@@ -60,24 +60,24 @@ iex> ExPgQuery.parameter_references(analyzed)
 ### Truncation
 
 ```elixir
-iex> ExPgQuery.truncate("SELECT id, name, email FROM users WHERE active = true", 32)
+iex> PgInspect.truncate("SELECT id, name, email FROM users WHERE active = true", 32)
 {:ok, "SELECT ... FROM users WHERE ..."}
 ```
 
 ### Normalization
 
 ```elixir
-iex> ExPgQuery.Normalize.normalize("SELECT * FROM users WHERE id = 123")
+iex> PgInspect.Normalize.normalize("SELECT * FROM users WHERE id = 123")
 {:ok, "SELECT * FROM users WHERE id = $1"}
 ```
 
 ### Fingerprinting
 
 ```elixir
-iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 123")
+iex> PgInspect.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 123")
 {:ok, "a0ead580058af585"}
 
-iex> ExPgQuery.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 456")
+iex> PgInspect.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 456")
 {:ok, "a0ead580058af585"}
 ```
 

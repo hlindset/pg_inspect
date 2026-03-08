@@ -450,7 +450,7 @@ static ERL_NIF_TERM normalize(ErlNifEnv *env, int argc,
 }
 
 /**
- * ExPgQuery NIF Implementation
+ * PgInspect NIF Implementation
  *
  * This module provides NIFs for PostgreSQL query parsing, deparsing,
  * scanning and fingerprinting functionality. It wraps the libpg_query
@@ -471,4 +471,4 @@ static ErlNifFunc funcs[] = {{"parse_protobuf", 1, parse_protobuf},
                              {"fingerprint", 1, fingerprint},
                              {"normalize", 1, normalize}};
 
-ERL_NIF_INIT(Elixir.ExPgQuery.Native, funcs, NULL, NULL, NULL, NULL)
+ERL_NIF_INIT(Elixir.PgInspect.Native, funcs, NULL, NULL, NULL, NULL)

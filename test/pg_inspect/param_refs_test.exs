@@ -1,20 +1,20 @@
-defmodule ExPgQuery.ParameterReferencesTest do
+defmodule PgInspect.ParameterReferencesTest do
   use ExUnit.Case
 
   describe "parameter_references/1" do
     test "collects plain numbered parameters" do
-      {:ok, analyzed} = ExPgQuery.analyze("SELECT * FROM x WHERE y = $1 AND z = $2")
+      {:ok, analyzed} = PgInspect.analyze("SELECT * FROM x WHERE y = $1 AND z = $2")
 
-      assert ExPgQuery.parameter_references(analyzed) == [
+      assert PgInspect.parameter_references(analyzed) == [
                %{location: 26, length: 2},
                %{location: 37, length: 2}
              ]
     end
 
     test "collects question-mark placeholders" do
-      {:ok, analyzed} = ExPgQuery.analyze("SELECT * FROM x WHERE y = ? AND z = ?")
+      {:ok, analyzed} = PgInspect.analyze("SELECT * FROM x WHERE y = ? AND z = ?")
 
-      assert ExPgQuery.parameter_references(analyzed) == [
+      assert PgInspect.parameter_references(analyzed) == [
                %{location: 26, length: 1},
                %{location: 36, length: 1}
              ]
@@ -22,9 +22,9 @@ defmodule ExPgQuery.ParameterReferencesTest do
 
     test "collects explicit casts" do
       {:ok, analyzed} =
-        ExPgQuery.analyze("SELECT * FROM x WHERE y = $1::text AND z = $2::timestamptz")
+        PgInspect.analyze("SELECT * FROM x WHERE y = $1::text AND z = $2::timestamptz")
 
-      assert ExPgQuery.parameter_references(analyzed) == [
+      assert PgInspect.parameter_references(analyzed) == [
                %{location: 26, length: 2, typename: ["text"]},
                %{location: 43, length: 2, typename: ["timestamptz"]}
              ]
@@ -32,9 +32,9 @@ defmodule ExPgQuery.ParameterReferencesTest do
 
     test "uses type-name location for interval casts" do
       {:ok, analyzed} =
-        ExPgQuery.analyze("SELECT * FROM x WHERE y = $1::text AND z < now() - INTERVAL $2")
+        PgInspect.analyze("SELECT * FROM x WHERE y = $1::text AND z < now() - INTERVAL $2")
 
-      assert ExPgQuery.parameter_references(analyzed) == [
+      assert PgInspect.parameter_references(analyzed) == [
                %{location: 26, length: 2, typename: ["text"]},
                %{location: 51, length: 11, typename: ["pg_catalog", "interval"]}
              ]

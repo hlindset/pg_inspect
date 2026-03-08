@@ -1,4 +1,4 @@
-defmodule ExPgQuery.TestData do
+defmodule PgInspect.TestData do
   @fingerprints [
     %{
       input: "SELECT 1",

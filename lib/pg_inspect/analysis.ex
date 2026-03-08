@@ -1,10 +1,10 @@
-defmodule ExPgQuery.Internal.Analysis do
+defmodule PgInspect.Internal.Analysis do
   @moduledoc false
 
-  alias ExPgQuery.AnalysisResult
-  alias ExPgQuery.Internal.AST
-  alias ExPgQuery.Internal.AST.Analysis, as: Scope
-  alias ExPgQuery.Internal.AST.Visit
+  alias PgInspect.AnalysisResult
+  alias PgInspect.Internal.AST
+  alias PgInspect.Internal.AST.Analysis, as: Scope
+  alias PgInspect.Internal.AST.Visit
 
   @type collector :: (Visit.t(), AnalysisResult.t() -> AnalysisResult.t())
 

@@ -1,5 +1,5 @@
 ignore:
-  - lib/ex_pg_query/native.ex
+  - lib/pg_inspect/native.ex
 
 coverage:
   status:

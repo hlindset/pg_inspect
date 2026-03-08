@@ -1,10 +1,10 @@
-defmodule ExPgQuery.Internal.ASTTest do
+defmodule PgInspect.Internal.ASTTest do
   use ExUnit.Case
 
-  alias ExPgQuery.Internal.AST
-  alias ExPgQuery.Internal.AST.Analysis
-  alias ExPgQuery.Internal.AST.Visit
-  alias ExPgQuery.Protobuf
+  alias PgInspect.Internal.AST
+  alias PgInspect.Internal.AST.Analysis
+  alias PgInspect.Internal.AST.Visit
+  alias PgInspect.Protobuf
 
   describe "reduce/4" do
     test "reports oneof paths and breadth-first traversal order" do
