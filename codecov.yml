@@ -1,5 +1,6 @@
 ignore:
-  - lib/ex_pg_query/native.ex
+  - lib/pg_inspect/native.ex
+  - lib/mix/tasks/benchmark.public_api.ex
 
 coverage:
   status:

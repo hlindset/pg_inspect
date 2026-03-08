@@ -12,20 +12,20 @@ ifeq ($(shell uname -s),Darwin)
     LDFLAGS += -undefined dynamic_lookup
 endif
 
-.PHONY: all ex_pg_query clean
+.PHONY: all pg_inspect clean libpg_query_build
 
-all: priv/ex_pg_query.so
+all: priv/pg_inspect.so
 
 priv:
 	mkdir -p priv
 
-$(LIBPG_QUERY_PATH)/libpg_query.a:
-	$(MAKE) -B -C $(LIBPG_QUERY_PATH) libpg_query.a
+libpg_query_build:
+	$(MAKE) -C $(LIBPG_QUERY_PATH) libpg_query.a
 
-priv/ex_pg_query.so: priv $(LIBPG_QUERY_PATH)/libpg_query.a src/ex_pg_query.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/ex_pg_query.c $(LIBPG_QUERY_PATH)/libpg_query.a
+priv/pg_inspect.so: priv libpg_query_build src/pg_inspect.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/pg_inspect.c $(LIBPG_QUERY_PATH)/libpg_query.a
 
 clean:
 	$(MIX) clean
 	$(MAKE) -C $(LIBPG_QUERY_PATH) clean
-	$(RM) priv/ex_pg_query.so
+	$(RM) priv/pg_inspect.so

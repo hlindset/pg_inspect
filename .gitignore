@@ -20,13 +20,16 @@ erl_crash.dump
 *.ez
 
 # Ignore package tarball (built via "mix hex.build").
-ex_pg_query-*.tar
+pg_inspect-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
 
 .DS_Store
 
-priv/ex_pg_query.so
+priv/pg_inspect.so
 
 checksum.exs
+
+libpg_query/**/*.o
+libpg_query/**/*.a

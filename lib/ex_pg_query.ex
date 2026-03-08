@@ -1,570 +1,256 @@
-defmodule ExPgQuery do
+defmodule PgInspect do
   @moduledoc """
-  Provides functionality for parsing and analyzing PostgreSQL SQL queries.
+  High-level PostgreSQL query parsing, analysis, and truncation helpers.
 
-  Parses SQL queries and extracts information about tables, functions, CTEs,
-  aliases, and filter columns. Supports all SQL statement types including SELECT,
-  DDL, and DML operations.
+  `PgInspect` exposes two public layers:
+
+  - raw AST I/O with `parse/1` and `deparse/1`
+  - analyzed-query helpers with `analyze/1` and accessor functions over
+    `PgInspect.AnalysisResult`
 
   ## Examples
 
-      iex> query = "SELECT id, name FROM users WHERE age > 21 AND users.id in (10, 20, 30)"
-      iex> {:ok, result} = ExPgQuery.parse(query)
-      iex> ExPgQuery.tables(result)
+      iex> {:ok, ast} = PgInspect.parse("SELECT * FROM users WHERE id = $1")
+      iex> match?(%PgQuery.ParseResult{}, ast)
+      true
+
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT count(*) FROM users WHERE id = $1")
+      iex> PgInspect.tables(analyzed)
       ["users"]
-      iex> ExPgQuery.filter_columns(result)
-      [{"users", "id"}, {nil, "age"}]
+      iex> PgInspect.functions(analyzed)
+      ["count"]
+      iex> PgInspect.parameter_references(analyzed)
+      [%{location: 38, length: 2}]
 
-      # DDL operations
-      iex> {:ok, result} = ExPgQuery.parse("CREATE TABLE posts (id integer, title text)")
-      iex> ExPgQuery.ddl_tables(result)
-      ["posts"]
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT * INTO films_recent FROM films")
-      iex> ExPgQuery.ddl_tables(result)
-      ["films_recent"]
-      iex> ExPgQuery.select_tables(result)
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT * INTO recent_films FROM films")
+      iex> PgInspect.ddl_tables(analyzed)
+      ["recent_films"]
+      iex> PgInspect.select_tables(analyzed)
       ["films"]
 
-      # Function analysis
-      iex> {:ok, result} = ExPgQuery.parse("SELECT count(*) FROM users")
-      iex> ExPgQuery.functions(result)
-      ["count"]
-
+      iex> PgInspect.truncate("SELECT id, name, email FROM users WHERE active = true", 32)
+      {:ok, "SELECT ... FROM users WHERE ..."}
   """
 
-  alias ExPgQuery.Truncator
-  alias ExPgQuery.NodeTraversal
-  alias ExPgQuery.NodeTraversal.Ctx
+  alias PgInspect.AnalysisResult
+  alias PgInspect.Internal.Analysis
+  alias PgInspect.Internal.Truncator
+  alias PgInspect.Protobuf
 
-  defmodule ParseResult do
-    @moduledoc """
-    Represents the result of parsing a SQL query.
-
-    ## Fields
-
-      * `tree` - Raw parse tree
-      * `tables` - Referenced tables
-      * `table_aliases` - Table aliases
-      * `cte_names` - Common Table Expression names
-      * `functions` - Referenced functions
-      * `filter_columns` - Columns used to filter rows, e.g. (`WHERE`, `JOIN ... ON`)
-
-    """
-
-    defstruct tree: nil,
-              tables: [],
-              table_aliases: [],
-              cte_names: [],
-              functions: [],
-              filter_columns: []
-  end
+  @type sql :: String.t()
+  @type raw_ast :: PgQuery.ParseResult.t()
+  @type analyze_input :: sql() | raw_ast()
+  @type truncate_input :: sql() | AnalysisResult.t()
 
   @doc """
-  Parses a SQL query and returns detailed information about its structure.
-
-  ## Parameters
-
-    * `query` - SQL query string to parse
-
-  ## Returns
-
-    * `{:ok, ExPgQuery.ParseResult}` - Successfully parsed query with analysis
-    * `{:error, reason}` - Error with reason
+  Parses SQL into a raw `PgQuery.ParseResult`.
 
   ## Examples
 
-      iex> query = "SELECT name FROM users u JOIN posts p ON u.id = p.user_id"
-      iex> {:ok, result} = ExPgQuery.parse(query)
-      iex> ExPgQuery.tables(result)
-      ["posts", "users"]
-      iex> ExPgQuery.table_aliases(result)
-      [%{alias: "p", relation: "posts", location: 30, schema: nil}, %{alias: "u", relation: "users", location: 17, schema: nil}]
-
+      iex> {:ok, ast} = PgInspect.parse("SELECT * FROM users")
+      iex> match?(%PgQuery.ParseResult{}, ast)
+      true
   """
-  def parse(query) do
-    with {:ok, tree} <- ExPgQuery.Protobuf.from_sql(query) do
-      nodes = NodeTraversal.nodes(tree)
+  @spec parse(sql()) :: {:ok, raw_ast()} | {:error, term()}
+  def parse(query) when is_binary(query), do: Protobuf.from_sql(query)
 
-      result =
-        Enum.reduce(nodes, %ParseResult{tree: tree}, fn node, acc ->
-          case node do
-            {node, %Ctx{} = ctx}
-            when is_struct(node, PgQuery.SelectStmt) or is_struct(node, PgQuery.UpdateStmt) or
-                   is_struct(node, PgQuery.MergeStmt) ->
-              new_table_aliases =
-                ctx.table_aliases
-                # we don't want to collect aliases for CTEs
-                |> Map.reject(fn {_k, %{relation: relation}} ->
-                  Enum.member?(ctx.cte_names, relation)
-                end)
-                |> Map.values()
+  @doc """
+  Same as `parse/1` but raises on error.
+  """
+  @spec parse!(sql()) :: raw_ast()
+  def parse!(query) when is_binary(query), do: Protobuf.from_sql!(query)
 
-              %ParseResult{
-                acc
-                | table_aliases: acc.table_aliases ++ new_table_aliases,
-                  cte_names: acc.cte_names ++ ctx.cte_names
-              }
+  @doc """
+  Deparses a raw `PgQuery.ParseResult` back into SQL.
 
-            {%PgQuery.DropStmt{remove_type: remove_type} = node, %Ctx{type: type}}
-            when remove_type in [
-                   :OBJECT_TABLE,
-                   :OBJECT_VIEW,
-                   :OBJECT_FUNCTION,
-                   :OBJECT_RULE,
-                   :OBJECT_TRIGGER
-                 ] ->
-              objects =
-                Enum.map(node.objects, fn
-                  %PgQuery.Node{node: {:list, list}} ->
-                    Enum.map(list.items, fn
-                      %PgQuery.Node{node: {:string, %PgQuery.String{sval: sval}}} -> sval
-                      _ -> nil
-                    end)
+  ## Examples
 
-                  %PgQuery.Node{
-                    node: {:object_with_args, %PgQuery.ObjectWithArgs{objname: objname}}
-                  } ->
-                    Enum.map(objname, fn
-                      %PgQuery.Node{node: {:string, %PgQuery.String{sval: sval}}} -> sval
-                      _ -> nil
-                    end)
+      iex> ast = PgInspect.parse!("SELECT * FROM users")
+      iex> PgInspect.deparse(ast)
+      {:ok, "SELECT * FROM users"}
+  """
+  @spec deparse(raw_ast()) :: {:ok, sql()} | {:error, term()}
+  def deparse(%PgQuery.ParseResult{} = ast), do: Protobuf.to_sql(ast)
 
-                  %PgQuery.Node{node: {:string, %PgQuery.String{sval: sval}}} ->
-                    sval
-                end)
+  @doc """
+  Same as `deparse/1` but raises on error.
+  """
+  @spec deparse!(raw_ast()) :: sql()
+  def deparse!(%PgQuery.ParseResult{} = ast), do: Protobuf.to_sql!(ast)
 
-              case remove_type do
-                rt when rt in [:OBJECT_TABLE, :OBJECT_VIEW] ->
-                  Enum.reduce(objects, acc, fn rel, acc ->
-                    table = %{name: Enum.join(rel, "."), type: type}
-                    %ParseResult{acc | tables: [table | acc.tables]}
-                  end)
+  @doc """
+  Builds an `PgInspect.AnalysisResult` from SQL text or a raw AST.
 
-                rt when rt in [:OBJECT_RULE, :OBJECT_TRIGGER] ->
-                  Enum.reduce(objects, acc, fn obj, acc ->
-                    name = Enum.slice(obj, 0..-2//1) |> Enum.join(".")
-                    table = %{name: name, type: type}
-                    %ParseResult{acc | tables: [table | acc.tables]}
-                  end)
+  ## Examples
 
-                :OBJECT_FUNCTION ->
-                  Enum.reduce(objects, acc, fn rel, acc ->
-                    function = %{name: Enum.join(rel, "."), type: type}
-                    %ParseResult{acc | functions: [function | acc.functions]}
-                  end)
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT u.name FROM users u WHERE u.id = $1")
+      iex> PgInspect.table_aliases(analyzed)
+      [%{alias: "u", location: 19, relation: "users", schema: nil}]
+      iex> PgInspect.filter_columns(analyzed)
+      [{"users", "id"}]
 
-                _ ->
-                  acc
-              end
-
-            #
-            # subselect items
-            #
-
-            {%PgQuery.ColumnRef{} = node, %Ctx{table_aliases: aliases, condition_item: true}} ->
-              field =
-                node.fields
-                |> Enum.filter(fn %PgQuery.Node{node: {type, _}} -> type == :string end)
-                |> Enum.map(fn %PgQuery.Node{node: {:string, %PgQuery.String{sval: sval}}} ->
-                  sval
-                end)
-
-              field =
-                case field do
-                  [tbl, fld] ->
-                    case Map.get(aliases, tbl) do
-                      nil -> {tbl, fld}
-                      alias -> {alias_to_name(alias), fld}
-                    end
-
-                  [fld] ->
-                    {nil, fld}
-
-                  _ ->
-                    nil
-                end
-
-              if field do
-                %ParseResult{acc | filter_columns: [field | acc.filter_columns]}
-              else
-                acc
-              end
-
-            #
-            # from clause items
-            #
-
-            {%PgQuery.RangeVar{} = node, %Ctx{type: type, from_clause_item: true} = ctx} ->
-              table_name =
-                case node do
-                  %PgQuery.RangeVar{schemaname: "", relname: relname} ->
-                    relname
-
-                  %PgQuery.RangeVar{schemaname: schemaname, relname: relname} ->
-                    "#{schemaname}.#{relname}"
-                end
-
-              is_cte_name =
-                Enum.member?(ctx.cte_names, table_name) || ctx.current_cte == table_name
-
-              cond do
-                # we're outside a cte, so it's a cte reference
-                is_cte_name && ctx.current_cte == nil ->
-                  acc
-
-                # we're inside a recursive cte, so it's a cte's reference to itself
-                is_cte_name && ctx.current_cte == table_name && ctx.is_recursive_cte ->
-                  acc
-
-                # otherwise, it's a cte's reference to a table with the same name
-                # or just a table reference
-                true ->
-                  table = %{
-                    name: table_name,
-                    type: type,
-                    location: node.location,
-                    schemaname: if(node.schemaname == "", do: nil, else: node.schemaname),
-                    relname: node.relname,
-                    inh: node.inh,
-                    relpersistence: node.relpersistence
-                  }
-
-                  %ParseResult{acc | tables: [table | acc.tables]}
-              end
-
-            #
-            # both from clause items and subselect items
-            #
-
-            {node, %Ctx{type: type}}
-            when is_struct(node, PgQuery.FuncCall) or is_struct(node, PgQuery.CreateFunctionStmt) ->
-              function =
-                node.funcname
-                |> Enum.map_join(".", fn %PgQuery.Node{
-                                           node: {:string, %PgQuery.String{sval: sval}}
-                                         } ->
-                  sval
-                end)
-
-              %ParseResult{acc | functions: [%{name: function, type: type} | acc.functions]}
-
-            {%PgQuery.RenameStmt{
-               rename_type: :OBJECT_FUNCTION,
-               newname: newname,
-               object: %PgQuery.Node{
-                 node:
-                   {:object_with_args,
-                    %PgQuery.ObjectWithArgs{
-                      objname: objname
-                    }}
-               }
-             }, %Ctx{type: type}} ->
-              original_name =
-                objname
-                |> Enum.map_join(".", fn %PgQuery.Node{
-                                           node: {:string, %PgQuery.String{sval: sval}}
-                                         } ->
-                  sval
-                end)
-
-              funcs = [
-                %{name: original_name, type: type},
-                %{name: newname, type: type}
-              ]
-
-              %ParseResult{acc | functions: funcs ++ acc.functions}
-
-            _ ->
-              acc
-          end
-        end)
-
-      {:ok,
-       %ParseResult{
-         result
-         | tables: Enum.uniq(result.tables),
-           cte_names: Enum.uniq(result.cte_names),
-           functions: Enum.uniq(result.functions),
-           table_aliases: Enum.uniq(result.table_aliases),
-           filter_columns: Enum.uniq(result.filter_columns)
-       }}
+      iex> ast = PgInspect.parse!("SELECT * FROM posts")
+      iex> {:ok, analyzed} = PgInspect.analyze(ast)
+      iex> PgInspect.statement_types(analyzed)
+      [:select_stmt]
+  """
+  @spec analyze(analyze_input()) :: {:ok, AnalysisResult.t()} | {:error, term()}
+  def analyze(query) when is_binary(query) do
+    case parse(query) do
+      {:ok, ast} -> {:ok, Analysis.analyze(ast)}
+      {:error, error} -> {:error, error}
     end
   end
 
-  defp alias_to_name(%{relation: relation, schema: nil}), do: relation
-  defp alias_to_name(%{relation: relation, schema: schema}), do: "#{schema}.#{relation}"
+  def analyze(%PgQuery.ParseResult{} = ast), do: {:ok, Analysis.analyze(ast)}
 
   @doc """
-  Returns all table names referenced in the query.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of table names
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT * FROM users JOIN posts ON users.id = posts.user_id")
-      iex> ExPgQuery.tables(result)
-      ["posts", "users"]
-
+  Same as `analyze/1` but raises on error.
   """
-  def tables(%ParseResult{tables: tables}),
-    do: Enum.map(tables, & &1.name) |> Enum.uniq()
-
-  @doc """
-  Returns table names from SELECT operations.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of table names used in SELECT statements
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT * FROM users; CREATE TABLE posts (id int)")
-      iex> ExPgQuery.select_tables(result)
-      ["users"]
-
-  """
-  def select_tables(%ParseResult{tables: tables}),
-    do:
-      tables
-      |> Enum.filter(&(&1.type == :select))
-      |> Enum.map(& &1.name)
-      |> Enum.uniq()
-
-  @doc """
-  Returns table names from DDL operations.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of table names in DDL statements
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("CREATE TABLE users (id int); SELECT * FROM posts")
-      iex> ExPgQuery.ddl_tables(result)
-      ["users"]
-
-  """
-  def ddl_tables(%ParseResult{tables: tables}),
-    do:
-      tables
-      |> Enum.filter(&(&1.type == :ddl))
-      |> Enum.map(& &1.name)
-      |> Enum.uniq()
-
-  @doc """
-  Returns table names from DML operations.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of table names in DML statements
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("INSERT INTO users (name) VALUES ('John')")
-      iex> ExPgQuery.dml_tables(result)
-      ["users"]
-
-  """
-  def dml_tables(%ParseResult{tables: tables}),
-    do:
-      tables
-      |> Enum.filter(&(&1.type == :dml))
-      |> Enum.map(& &1.name)
-      |> Enum.uniq()
-
-  @doc """
-  Returns all function names referenced in the query.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of function names
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT count(*), max(age) FROM users")
-      iex> ExPgQuery.functions(result)
-      ["max", "count"]
-
-  """
-  def functions(%ParseResult{functions: functions}),
-    do: Enum.map(functions, & &1.name) |> Enum.uniq()
-
-  @doc """
-  Returns function names that are called in the query.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of called function names
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT * FROM users WHERE age > my_func()")
-      iex> ExPgQuery.call_functions(result)
-      ["my_func"]
-
-  """
-  def call_functions(%ParseResult{functions: functions}),
-    do:
-      functions
-      |> Enum.filter(&(&1.type == :call))
-      |> Enum.map(& &1.name)
-      |> Enum.uniq()
-
-  @doc """
-  Returns function names from DDL operations.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of function names in DDL statements
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("CREATE FUNCTION add(a int, b int) RETURNS int")
-      iex> ExPgQuery.ddl_functions(result)
-      ["add"]
-
-  """
-  def ddl_functions(%ParseResult{functions: functions}),
-    do:
-      functions
-      |> Enum.filter(&(&1.type == :ddl))
-      |> Enum.map(& &1.name)
-      |> Enum.uniq()
-
-  @doc """
-  Returns column references used in filter conditions.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of `{table_name, column_name}` tuples
-      * `table_name` can be nil if table isn't specified in query
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT * FROM users WHERE age > 21 AND users.active = true")
-      iex> ExPgQuery.filter_columns(result)
-      [{"users", "active"}, {nil, "age"}]
-
-  """
-  def filter_columns(%ParseResult{filter_columns: filter_columns}),
-    do: filter_columns
-
-  @doc """
-  Returns table aliases defined in the query.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of alias maps containing:
-      * `alias` - Alias name
-      * `relation` - Original table name
-      * `location` - Position in query
-      * `schema` - Schema name (or nil)
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT u.name FROM users u JOIN posts p ON u.id = p.user_id")
-      iex> ExPgQuery.table_aliases(result)
-      [
-        %{alias: "p", relation: "posts", location: 32, schema: nil},
-        %{alias: "u", relation: "users", location: 19, schema: nil}
-      ]
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT * FROM public.users usr")
-      iex> ExPgQuery.table_aliases(result)
-      [%{alias: "usr", relation: "users", location: 14, schema: "public"}]
-
-  """
-  def table_aliases(%ParseResult{table_aliases: table_aliases}),
-    do: table_aliases
-
-  @doc """
-  Returns types of statements in the query.
-
-  ## Parameters
-
-    * `result` - `ExPgQuery.ParseResult` struct
-
-  ## Returns
-
-    * List of statement type atoms
-
-  ## Examples
-
-      iex> {:ok, result} = ExPgQuery.parse("SELECT 1; INSERT INTO users (id) VALUES (1)")
-      iex> ExPgQuery.statement_types(result)
-      [:select_stmt, :insert_stmt]
-
-  """
-  def statement_types(%ParseResult{tree: %PgQuery.ParseResult{stmts: stmts}}) do
-    Enum.map(stmts, fn %PgQuery.RawStmt{stmt: %PgQuery.Node{node: {stmt_type, _}}} ->
-      stmt_type
-    end)
+  @spec analyze!(analyze_input()) :: AnalysisResult.t()
+  def analyze!(input) do
+    case analyze(input) do
+      {:ok, analyzed} -> analyzed
+      {:error, error} -> raise "Analysis error: #{inspect(error)}"
+    end
   end
 
   @doc """
-  Truncates query to be below the specified length.
+  Returns all referenced table names.
+  """
+  @spec tables(AnalysisResult.t()) :: [String.t()]
+  def tables(%AnalysisResult{tables: tables}) do
+    tables
+    |> Enum.map(& &1.name)
+    |> Enum.uniq()
+  end
 
-  Attempts smart truncation of specific query parts before falling back to
-  hard truncation.
+  @doc """
+  Returns table names referenced by `SELECT` statements.
+  """
+  @spec select_tables(AnalysisResult.t()) :: [String.t()]
+  def select_tables(%AnalysisResult{tables: tables}) do
+    tables
+    |> Enum.filter(&(&1.type == :select))
+    |> Enum.map(& &1.name)
+    |> Enum.uniq()
+  end
 
-  ## Parameters
+  @doc """
+  Returns table names referenced by DDL statements.
+  """
+  @spec ddl_tables(AnalysisResult.t()) :: [String.t()]
+  def ddl_tables(%AnalysisResult{tables: tables}) do
+    tables
+    |> Enum.filter(&(&1.type == :ddl))
+    |> Enum.map(& &1.name)
+    |> Enum.uniq()
+  end
 
-    * `parse_result` - A `ExPgQuery.ParseResult` struct containing the parsed query
-    * `max_length` - Maximum allowed length of the output string
+  @doc """
+  Returns table names referenced by DML statements.
+  """
+  @spec dml_tables(AnalysisResult.t()) :: [String.t()]
+  def dml_tables(%AnalysisResult{tables: tables}) do
+    tables
+    |> Enum.filter(&(&1.type == :dml))
+    |> Enum.map(& &1.name)
+    |> Enum.uniq()
+  end
 
-  ## Returns
+  @doc """
+  Returns all referenced function names.
+  """
+  @spec functions(AnalysisResult.t()) :: [String.t()]
+  def functions(%AnalysisResult{functions: functions}) do
+    functions
+    |> Enum.map(& &1.name)
+    |> Enum.uniq()
+  end
 
-    * `{:ok, string}` - Successfully truncated query
-    * `{:error, reason}` - Error during truncation
+  @doc """
+  Returns function names referenced from callable statements.
+  """
+  @spec call_functions(AnalysisResult.t()) :: [String.t()]
+  def call_functions(%AnalysisResult{functions: functions}) do
+    functions
+    |> Enum.filter(&(&1.type == :call))
+    |> Enum.map(& &1.name)
+    |> Enum.uniq()
+  end
+
+  @doc """
+  Returns function names referenced by DDL statements.
+  """
+  @spec ddl_functions(AnalysisResult.t()) :: [String.t()]
+  def ddl_functions(%AnalysisResult{functions: functions}) do
+    functions
+    |> Enum.filter(&(&1.type == :ddl))
+    |> Enum.map(& &1.name)
+    |> Enum.uniq()
+  end
+
+  @doc """
+  Returns columns referenced from filter conditions such as `WHERE` and `JOIN ... ON`.
+  """
+  @spec filter_columns(AnalysisResult.t()) :: [{String.t() | nil, String.t()}]
+  def filter_columns(%AnalysisResult{filter_columns: filter_columns}), do: filter_columns
+
+  @doc """
+  Returns table alias metadata.
+  """
+  @spec table_aliases(AnalysisResult.t()) :: [map()]
+  def table_aliases(%AnalysisResult{table_aliases: table_aliases}), do: table_aliases
+
+  @doc """
+  Returns CTE names declared in `WITH` clauses in the analyzed query.
+  """
+  @spec cte_names(AnalysisResult.t()) :: [String.t()]
+  def cte_names(%AnalysisResult{cte_names: cte_names}), do: cte_names
+
+  @doc """
+  Returns parameter reference metadata for `$n` placeholders.
+  """
+  @spec parameter_references(AnalysisResult.t()) :: [map()]
+  def parameter_references(%AnalysisResult{parameter_references: refs}), do: refs
+
+  @doc """
+  Returns the raw statement node types in query order.
+  """
+  @spec statement_types(AnalysisResult.t()) :: [atom()]
+  def statement_types(%AnalysisResult{statement_types: statement_types}), do: statement_types
+
+  @doc """
+  Truncates SQL text or an analyzed query to fit within `max_length`.
 
   ## Examples
 
-      iex> query = "SELECT * FROM users WHERE name = 'very long name'"
-      iex> {:ok, parse_result} = ExPgQuery.parse(query)
-      iex> ExPgQuery.truncate(parse_result, 30)
+      iex> {:ok, analyzed} = PgInspect.analyze("SELECT * FROM users WHERE name = 'very long name'")
+      iex> PgInspect.truncate(analyzed, 30)
       {:ok, "SELECT * FROM users WHERE ..."}
-
   """
-  def truncate(%ParseResult{} = parse_result, max_length) do
-    Truncator.truncate(parse_result.tree, max_length)
+  @spec truncate(truncate_input(), integer()) :: {:ok, sql()} | {:error, term()}
+  def truncate(query, max_length) when is_binary(query) and is_integer(max_length) do
+    with {:ok, ast} <- parse(query) do
+      Truncator.truncate(ast, max_length)
+    end
+  end
+
+  def truncate(%AnalysisResult{raw_ast: %PgQuery.ParseResult{} = ast}, max_length)
+      when is_integer(max_length) do
+    Truncator.truncate(ast, max_length)
+  end
+
+  def truncate(%AnalysisResult{raw_ast: nil}, _max_length), do: {:error, :missing_raw_ast}
+
+  @doc """
+  Same as `truncate/2` but raises on error.
+  """
+  @spec truncate!(truncate_input(), integer()) :: sql()
+  def truncate!(input, max_length) do
+    case truncate(input, max_length) do
+      {:ok, sql} -> sql
+      {:error, error} -> raise "Truncation error: #{inspect(error)}"
+    end
   end
 end
