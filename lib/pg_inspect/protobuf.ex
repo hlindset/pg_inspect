@@ -103,7 +103,7 @@ defmodule PgInspect.Protobuf do
 
   ## Raises
 
-    * Runtime error if departing fails
+    * Runtime error if deparsing fails
 
   """
   def to_sql!(protobuf) do
@@ -173,7 +173,7 @@ defmodule PgInspect.Protobuf do
 
   ## Raises
 
-    * Runtime error if departing fails
+    * Runtime error if deparsing fails
 
   """
   def stmt_to_sql!(stmt) do
@@ -222,7 +222,7 @@ defmodule PgInspect.Protobuf do
 
   ## Raises
 
-    * Runtime error if departing fails
+    * Runtime error if deparsing fails
 
   """
   def expr_to_sql!(expr) do

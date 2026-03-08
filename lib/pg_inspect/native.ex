@@ -9,6 +9,7 @@ defmodule PgInspect.Native do
 
   @on_load :init
 
+  @doc false
   def init do
     :ok = load_nif()
   end

@@ -4,6 +4,7 @@ defmodule PgInspect.AnalysisResult do
 
   The supported analysis fields are:
 
+  - `raw_ast`
   - `tables`
   - `table_aliases`
   - `cte_names`
@@ -16,7 +17,8 @@ defmodule PgInspect.AnalysisResult do
   @derive {Inspect, except: [:raw_ast]}
 
   @typedoc """
-  High-level query analysis result.
+  High-level query analysis result. `raw_ast` preserves the original parse tree
+  for operations such as `PgInspect.truncate/2`.
   """
   @type t :: %__MODULE__{
           raw_ast: PgQuery.ParseResult.t() | nil,

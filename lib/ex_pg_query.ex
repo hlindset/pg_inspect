@@ -203,7 +203,7 @@ defmodule PgInspect do
   def table_aliases(%AnalysisResult{table_aliases: table_aliases}), do: table_aliases
 
   @doc """
-  Returns CTE names referenced in the analyzed query.
+  Returns CTE names declared in `WITH` clauses in the analyzed query.
   """
   @spec cte_names(AnalysisResult.t()) :: [String.t()]
   def cte_names(%AnalysisResult{cte_names: cte_names}), do: cte_names
