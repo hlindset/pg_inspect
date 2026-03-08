@@ -30,3 +30,6 @@ pg_inspect-*.tar
 priv/pg_inspect.so
 
 checksum.exs
+
+libpg_query/**/*.o
+libpg_query/**/*.a
