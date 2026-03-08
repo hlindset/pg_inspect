@@ -6,6 +6,9 @@ const c = @cImport({
     @cInclude("protobuf/pg_query.pb-c.h");
     @cInclude("protobuf-c/protobuf-c.h");
 });
+// Zigler's generic u64 term encoding still resolves to a 32-bit c_ulong on
+// some cross targets, so this shim keeps fingerprint map construction portable.
+extern fn pginspect_make_uint64(env: beam.env, value: u64) e.ErlNifTerm;
 
 const max_sql_length: usize = 16 * 1024 * 1024;
 const max_protobuf_length: usize = 32 * 1024 * 1024;
@@ -86,6 +89,19 @@ fn parse_error_term(env: beam.env, err: [*c]const c.PgQueryError) beam.term {
     );
 }
 
+fn fingerprint_result_term(env: beam.env, result: c.PgQueryFingerprintResult) beam.term {
+    return beam.make(
+        .{
+            .ok,
+            .{
+                .fingerprint = beam.term{ .v = pginspect_make_uint64(env, result.fingerprint) },
+                .fingerprint_str = c_string_slice(result.fingerprint_str),
+            },
+        },
+        .{ .env = env },
+    );
+}
+
 /// Parses a SQL query into a serialized protobuf AST.
 pub fn parse_protobuf(query: []const u8) beam.term {
     const env = beam.context.env;
@@ -157,16 +173,7 @@ pub fn fingerprint(query: []const u8) beam.term {
         return make_error(env, pg_query_error_message(&result.@"error"[0]));
     }
 
-    return beam.make(
-        .{
-            .ok,
-            .{
-                .fingerprint = result.fingerprint,
-                .fingerprint_str = c_string_slice(result.fingerprint_str),
-            },
-        },
-        .{ .env = env },
-    );
+    return fingerprint_result_term(env, result);
 }
 
 /// Scans SQL into libpg_query's protobuf token stream.

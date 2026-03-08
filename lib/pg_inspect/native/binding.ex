@@ -46,6 +46,7 @@ defmodule PgInspect.Native.Binding do
                  Path.wildcard(Path.join(@libpg_query_root, "src/*.c")) ++
                  Path.wildcard(Path.join(@libpg_query_root, "src/postgres/*.c")) ++
                  [
+                   Path.join(__DIR__, "uint64_shim.c"),
                    Path.join(@libpg_query_root, "vendor/protobuf-c/protobuf-c.c"),
                    Path.join(@libpg_query_root, "vendor/xxhash/xxhash.c"),
                    Path.join(@libpg_query_root, "protobuf/pg_query.pb-c.c")
