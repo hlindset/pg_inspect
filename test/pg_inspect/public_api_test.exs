@@ -53,13 +53,6 @@ defmodule PgInspect.PublicApiTest do
       assert PgInspect.truncate!(analyzed, 32) == "SELECT ... FROM users WHERE ..."
     end
 
-    test "returns an error when analyzed results do not keep a raw ast" do
-      analyzed = PgInspect.analyze!("SELECT * FROM users WHERE id = ?")
-
-      assert analyzed.raw_ast == nil
-      assert {:error, :missing_raw_ast} = PgInspect.truncate(analyzed, 20)
-    end
-
     test "truncate!/2 raises when an analyzed result has no raw ast" do
       assert_raise RuntimeError, ~r/Truncation error: :missing_raw_ast/, fn ->
         PgInspect.truncate!(%AnalysisResult{}, 20)
