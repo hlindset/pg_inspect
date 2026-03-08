@@ -37,7 +37,7 @@ defmodule PgInspect.Internal.Analysis do
          },
          %AnalysisResult{} = result
        ) do
-    %AnalysisResult{result | statement_types: result.statement_types ++ [statement_type]}
+    %{result | statement_types: result.statement_types ++ [statement_type]}
   end
 
   defp collect_statement_types(%Visit{}, %AnalysisResult{} = result), do: result
@@ -57,7 +57,7 @@ defmodule PgInspect.Internal.Analysis do
       |> Map.reject(fn {_alias, %{relation: relation}} -> relation in scope.cte_names end)
       |> Map.values()
 
-    %AnalysisResult{
+    %{
       result
       | table_aliases: result.table_aliases ++ aliases,
         cte_names: result.cte_names ++ scope.cte_names
@@ -92,7 +92,7 @@ defmodule PgInspect.Internal.Analysis do
   defp collect_drop_object(%AnalysisResult{} = result, object, remove_type, statement)
        when remove_type in [:OBJECT_TABLE, :OBJECT_VIEW] do
     table = %{name: Enum.join(object, "."), type: statement}
-    %AnalysisResult{result | tables: [table | result.tables]}
+    %{result | tables: [table | result.tables]}
   end
 
   defp collect_drop_object(%AnalysisResult{} = result, object, remove_type, statement)
@@ -103,12 +103,12 @@ defmodule PgInspect.Internal.Analysis do
       |> Enum.join(".")
 
     table = %{name: name, type: statement}
-    %AnalysisResult{result | tables: [table | result.tables]}
+    %{result | tables: [table | result.tables]}
   end
 
   defp collect_drop_object(%AnalysisResult{} = result, object, :OBJECT_FUNCTION, statement) do
     function = %{name: Enum.join(object, "."), type: statement}
-    %AnalysisResult{result | functions: [function | result.functions]}
+    %{result | functions: [function | result.functions]}
   end
 
   defp collect_filter_columns(
@@ -120,7 +120,7 @@ defmodule PgInspect.Internal.Analysis do
        ) do
     case filter_column(node, aliases) do
       nil -> result
-      field -> %AnalysisResult{result | filter_columns: [field | result.filter_columns]}
+      field -> %{result | filter_columns: [field | result.filter_columns]}
     end
   end
 
@@ -160,7 +160,7 @@ defmodule PgInspect.Internal.Analysis do
           relpersistence: node.relpersistence
         }
 
-        %AnalysisResult{result | tables: [table | result.tables]}
+        %{result | tables: [table | result.tables]}
     end
   end
 
@@ -175,7 +175,7 @@ defmodule PgInspect.Internal.Analysis do
        )
        when is_struct(node, PgQuery.FuncCall) or is_struct(node, PgQuery.CreateFunctionStmt) do
     function = %{name: function_name(node.funcname), type: statement}
-    %AnalysisResult{result | functions: [function | result.functions]}
+    %{result | functions: [function | result.functions]}
   end
 
   defp collect_functions(
@@ -197,7 +197,7 @@ defmodule PgInspect.Internal.Analysis do
        ) do
     original_name = function_name(objname)
     functions = [%{name: original_name, type: statement}, %{name: newname, type: statement}]
-    %AnalysisResult{result | functions: functions ++ result.functions}
+    %{result | functions: functions ++ result.functions}
   end
 
   defp collect_functions(%Visit{}, %AnalysisResult{} = result), do: result
@@ -215,7 +215,7 @@ defmodule PgInspect.Internal.Analysis do
 
       _ ->
         ref = %{location: node.location, length: param_ref_length(node)}
-        %AnalysisResult{result | parameter_references: [ref | result.parameter_references]}
+        %{result | parameter_references: [ref | result.parameter_references]}
     end
   end
 
@@ -252,7 +252,7 @@ defmodule PgInspect.Internal.Analysis do
       typename: Enum.map(type_name_node.names, &string_value/1)
     }
 
-    %AnalysisResult{result | parameter_references: [ref | result.parameter_references]}
+    %{result | parameter_references: [ref | result.parameter_references]}
   end
 
   defp collect_parameter_references(%Visit{}, %AnalysisResult{} = result), do: result
@@ -313,7 +313,7 @@ defmodule PgInspect.Internal.Analysis do
   defp param_ref_length(%PgQuery.ParamRef{number: number}), do: String.length("$#{number}")
 
   defp finalize_result(%AnalysisResult{} = result) do
-    %AnalysisResult{
+    %{
       result
       | tables: Enum.uniq(result.tables),
         cte_names: Enum.uniq(result.cte_names),

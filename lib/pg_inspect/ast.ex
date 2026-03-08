@@ -162,39 +162,39 @@ defmodule PgInspect.Internal.AST do
             end
 
           cte_names = collect_cte_names(select_stmt.with_clause)
-          %__MODULE__{analysis | aliases: aliases, cte_names: analysis.cte_names ++ cte_names}
+          %{analysis | aliases: aliases, cte_names: analysis.cte_names ++ cte_names}
 
         %PgQuery.InsertStmt{} = insert_stmt ->
           cte_names = collect_cte_names(insert_stmt.with_clause)
-          %__MODULE__{analysis | cte_names: analysis.cte_names ++ cte_names}
+          %{analysis | cte_names: analysis.cte_names ++ cte_names}
 
         %PgQuery.UpdateStmt{} = update_stmt ->
           aliases = collect_update_aliases(update_stmt)
           cte_names = collect_cte_names(update_stmt.with_clause)
-          %__MODULE__{analysis | aliases: aliases, cte_names: analysis.cte_names ++ cte_names}
+          %{analysis | aliases: aliases, cte_names: analysis.cte_names ++ cte_names}
 
         %PgQuery.DeleteStmt{} = delete_stmt ->
           cte_names = collect_cte_names(delete_stmt.with_clause)
-          %__MODULE__{analysis | cte_names: analysis.cte_names ++ cte_names}
+          %{analysis | cte_names: analysis.cte_names ++ cte_names}
 
         %PgQuery.MergeStmt{} = merge_stmt ->
           aliases = collect_merge_aliases(merge_stmt)
           cte_names = collect_cte_names(merge_stmt.with_clause)
-          %__MODULE__{analysis | aliases: aliases, cte_names: analysis.cte_names ++ cte_names}
+          %{analysis | aliases: aliases, cte_names: analysis.cte_names ++ cte_names}
 
         %PgQuery.FuncCall{} ->
-          %__MODULE__{analysis | statement: :call}
+          %{analysis | statement: :call}
 
         %PgQuery.WithClause{recursive: recursive?} ->
-          %__MODULE__{analysis | recursive_cte?: recursive?}
+          %{analysis | recursive_cte?: recursive?}
 
         %PgQuery.CommonTableExpr{ctename: ctename} ->
-          %__MODULE__{analysis | current_cte: ctename}
+          %{analysis | current_cte: ctename}
 
         _ ->
           case Map.get(@default_statement, node.__struct__) do
             nil -> analysis
-            statement -> %__MODULE__{analysis | statement: statement}
+            statement -> %{analysis | statement: statement}
           end
       end
     end
@@ -205,101 +205,101 @@ defmodule PgInspect.Internal.AST do
     def enter_field(parent, field, analysis)
 
     def enter_field(%PgQuery.SelectStmt{}, :where_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | in_condition?: true}
+      do: %{analysis | in_condition?: true}
 
     def enter_field(%PgQuery.SelectStmt{}, :into_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.SelectStmt{}, :from_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_from_clause?: true}
+      do: %{analysis | statement: :select, in_from_clause?: true}
 
     def enter_field(%PgQuery.DeleteStmt{}, :where_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_condition?: true}
+      do: %{analysis | statement: :select, in_condition?: true}
 
     def enter_field(%PgQuery.DeleteStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :dml, in_from_clause?: true}
+      do: %{analysis | statement: :dml, in_from_clause?: true}
 
     def enter_field(%PgQuery.DeleteStmt{}, :using_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_from_clause?: true}
+      do: %{analysis | statement: :select, in_from_clause?: true}
 
     def enter_field(%PgQuery.UpdateStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :dml, in_from_clause?: true}
+      do: %{analysis | statement: :dml, in_from_clause?: true}
 
     def enter_field(%PgQuery.UpdateStmt{}, :where_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_condition?: true}
+      do: %{analysis | statement: :select, in_condition?: true}
 
     def enter_field(%PgQuery.UpdateStmt{}, :from_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_from_clause?: true}
+      do: %{analysis | statement: :select, in_from_clause?: true}
 
     def enter_field(%PgQuery.MergeStmt{}, :join_condition, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | in_condition?: true}
+      do: %{analysis | in_condition?: true}
 
     def enter_field(%PgQuery.MergeStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :dml, in_from_clause?: true}
+      do: %{analysis | statement: :dml, in_from_clause?: true}
 
     def enter_field(%PgQuery.MergeStmt{}, :source_relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_from_clause?: true}
+      do: %{analysis | statement: :select, in_from_clause?: true}
 
     def enter_field(%PgQuery.MergeWhenClause{}, :condition, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | in_condition?: true}
+      do: %{analysis | in_condition?: true}
 
     def enter_field(%PgQuery.IndexStmt{}, :where_clause, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_condition?: true}
+      do: %{analysis | statement: :select, in_condition?: true}
 
     def enter_field(%PgQuery.IndexStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.InsertStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :dml, in_from_clause?: true}
+      do: %{analysis | statement: :dml, in_from_clause?: true}
 
     def enter_field(%PgQuery.CreateStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.CreateTableAsStmt{}, :into, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.AlterTableStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.CopyStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_from_clause?: true}
+      do: %{analysis | statement: :select, in_from_clause?: true}
 
     def enter_field(%PgQuery.RuleStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(
           %PgQuery.GrantStmt{objtype: :OBJECT_TABLE},
           :objects,
           %__MODULE__{} = analysis
         ),
-        do: %__MODULE__{analysis | in_from_clause?: true}
+        do: %{analysis | in_from_clause?: true}
 
     def enter_field(%PgQuery.TruncateStmt{}, :relations, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.VacuumStmt{}, :rels, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.ViewStmt{}, :view, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.RefreshMatViewStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.CreateTrigStmt{}, :relation, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :ddl, in_from_clause?: true}
+      do: %{analysis | statement: :ddl, in_from_clause?: true}
 
     def enter_field(%PgQuery.LockStmt{}, :relations, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | statement: :select, in_from_clause?: true}
+      do: %{analysis | statement: :select, in_from_clause?: true}
 
     def enter_field(%PgQuery.JoinExpr{}, :quals, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | in_condition?: true}
+      do: %{analysis | in_condition?: true}
 
     def enter_field(%PgQuery.SubLink{}, _field, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | in_subquery?: true}
+      do: %{analysis | in_subquery?: true}
 
     def enter_field(%PgQuery.RangeSubselect{lateral: true}, _field, %__MODULE__{} = analysis),
-      do: %__MODULE__{analysis | in_subquery?: true}
+      do: %{analysis | in_subquery?: true}
 
     def enter_field(_parent, _field, %__MODULE__{} = analysis), do: analysis
 
