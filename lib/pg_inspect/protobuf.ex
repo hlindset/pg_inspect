@@ -131,7 +131,7 @@ defmodule PgInspect.Protobuf do
   ## Examples
 
       iex> %PgQuery.ParseResult{
-      ...>   version: 170000,
+      ...>   version: 170007,
       ...>   stmts: [
       ...>     %PgQuery.RawStmt{
       ...>       stmt: %PgQuery.Node{

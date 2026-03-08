@@ -347,6 +347,18 @@ UNION ALL
 SELECT t1.id, t2.path, t2 FROM t AS t1 JOIN t AS t2 ON
 (t1.id=t2.id);
 
+CREATE TEMP TABLE duplicates (a INT NOT NULL);
+INSERT INTO duplicates VALUES(1), (1);
+
+-- Try out a recursive UNION case where the non-recursive part's table slot
+-- uses TTSOpsBufferHeapTuple and contains duplicate rows.
+WITH RECURSIVE cte (a) as (
+	SELECT a FROM duplicates
+	UNION
+	SELECT a FROM cte
+)
+SELECT a FROM cte;
+
 -- test that column statistics from a materialized CTE are available
 -- to upper planner (otherwise, we'd get a stupider plan)
 explain (costs off)
@@ -937,6 +949,13 @@ WITH RECURSIVE x(n) AS (
   ORDER BY (SELECT n FROM x))
 	SELECT * FROM x;
 
+-- and this
+WITH RECURSIVE x(n) AS (
+  WITH sub_cte AS (SELECT * FROM x)
+  DELETE FROM graph RETURNING f)
+	SELECT * FROM x;
+
+
 CREATE TEMPORARY TABLE y (a INTEGER);
 INSERT INTO y SELECT generate_series(1, 10);
 
@@ -1063,6 +1082,20 @@ from int4_tbl;
 select ( with cte(foo) as ( values(f1) )
           values((select foo from cte)) )
 from int4_tbl;
+
+--
+-- test for bug #19055: interaction of WITH with aggregates
+--
+-- The reference to cte1 must determine the aggregate's level,
+-- even though it contains no Vars referencing cte1
+explain (verbose, costs off)
+select f1, (with cte1(x,y) as (select 1,2)
+            select count((select i4.f1 from cte1))) as ss
+from int4_tbl i4;
+
+select f1, (with cte1(x,y) as (select 1,2)
+            select count((select i4.f1 from cte1))) as ss
+from int4_tbl i4;
 
 --
 -- test for nested-recursive-WITH bug

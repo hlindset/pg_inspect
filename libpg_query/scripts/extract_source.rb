@@ -279,8 +279,8 @@ class Runner
             end_offset += 1 if cursor.kind == :cursor_variable # The ";" isn't counted correctly by clang
 
             if cursor.kind == :cursor_variable && (cursor.linkage == :external || cursor.linkage == :internal) &&
-              !cursor.type.const_qualified? && !cursor.type.array_element_type.const_qualified? &&
-              cursor.type.pointee.kind != :type_function_proto
+              !cursor.type.const_qualified? && !(cursor.type.is_a?(FFI::Clang::Types::Array) && cursor.type.element_type.const_qualified?) &&
+              !(cursor.type.is_a?(FFI::Clang::Types::Pointer) && cursor.type.pointee.kind == :type_function_proto)
               analysis.external_variables << cursor.spelling
             end
 
@@ -724,6 +724,11 @@ runner.deep_resolve('makeBitString')
 
 # Needed for deparse
 runner.deep_resolve('pg_toupper')
+runner.deep_resolve('makeStringInfo')
+runner.deep_resolve('list_delete_last')
+runner.deep_resolve('list_insert_nth')
+runner.deep_resolve('bms_add_member')
+runner.deep_resolve('bms_is_member')
 
 # Needed for normalize
 runner.deep_resolve('pg_qsort')
@@ -733,6 +738,13 @@ runner.deep_resolve('raw_expression_tree_walker_impl')
 # Needed to work with simplehash (in fingerprinting logic)
 runner.deep_resolve('hash_bytes')
 runner.deep_resolve('MemoryContextAllocExtended')
+
+# Needed for summary
+runner.deep_resolve('makeRangeVarFromNameList')
+runner.deep_resolve('list_sort')
+runner.deep_resolve('pg_mbcharcliplen')
+runner.deep_resolve('pg_mbstrlen')
+runner.deep_resolve('destroyStringInfo')
 
 # Other required functions
 runner.deep_resolve('pg_printf')
