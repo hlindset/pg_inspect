@@ -448,7 +448,7 @@ defmodule PgInspect.Internal.AST do
   end
 
   def update(%{__struct__: _} = tree, [key | rest], update_fn) when is_atom(key) do
-    case fetch_key(tree, key) do
+    case Map.fetch(tree, key) do
       {:ok, value} ->
         with {:ok, updated_value} <- update(value, rest, update_fn) do
           {:ok, Map.put(tree, key, updated_value)}
@@ -581,13 +581,5 @@ defmodule PgInspect.Internal.AST do
 
   defp extract_field_value(struct, %Protox.Field{name: name}) do
     Map.get(struct, name)
-  end
-
-  defp fetch_key(%{__struct__: _} = tree, key) do
-    if Map.has_key?(tree, key) do
-      {:ok, Map.get(tree, key)}
-    else
-      :error
-    end
   end
 end
