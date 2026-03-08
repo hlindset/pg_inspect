@@ -81,6 +81,27 @@ iex> PgInspect.Fingerprint.fingerprint("SELECT * FROM users WHERE id = 456")
 {:ok, "a0ead580058af585"}
 ```
 
+## Benchmarking
+
+To benchmark the public API surface in the `dev` environment:
+
+```sh
+mix benchmark.public_api
+```
+
+You can shorten the run for quick checks:
+
+```sh
+mix benchmark.public_api --warmup 0.5 --time 2 --memory-time 0
+```
+
+The benchmark covers:
+
+- SQL entry points such as `PgInspect.parse/1`, `PgInspect.analyze/1`,
+  `PgInspect.truncate/2`, normalization, and fingerprinting
+- AST entry points such as `PgInspect.deparse/1` and `PgInspect.Protobuf.to_sql/1`
+- analysis result accessors such as `PgInspect.tables/1`
+
 ## License
 
 This library is distributed under the terms of the [MIT license](LICENSE).

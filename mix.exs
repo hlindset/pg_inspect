@@ -90,6 +90,7 @@ defmodule PgInspect.MixProject do
       {:protox, "~> 2.0"},
       {:elixir_make, "~> 0.9", runtime: false},
       {:cc_precompiler, "~> 0.1.10", runtime: false, github: "cocoa-xu/cc_precompiler"},
+      {:benchee, "~> 1.3", only: :dev, runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.4", only: [:dev, :test], runtime: false},
