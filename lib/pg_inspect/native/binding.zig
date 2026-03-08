@@ -55,7 +55,7 @@ fn validate_input(input: []const u8, max_length: usize) !void {
     }
 }
 
-fn make_c_string(input: []const u8) ![*:0]u8 {
+fn make_c_string(input: []const u8) ![:0]u8 {
     if (std.mem.indexOfScalar(u8, input, 0) != null) {
         return error.ContainsNullByte;
     }
@@ -64,19 +64,16 @@ fn make_c_string(input: []const u8) ![*:0]u8 {
         return error.InputSizeTooLarge;
     }
 
-    // libpg_query expects a mutable, NUL-terminated C string. We allocate it
-    // with enif_alloc so it can be released with enif_free in the caller.
-    const raw = e.enif_alloc(input.len + 1) orelse return error.AllocationFailed;
-
-    const str = @as([*]u8, @ptrCast(raw));
+    // libpg_query expects a mutable, NUL-terminated C string. Use Zigler's
+    // BEAM-backed allocator so this temporary buffer follows normal Zig
+    // allocation patterns.
+    const str = try beam.allocator.allocSentinel(u8, input.len, 0);
 
     if (input.len > 0) {
         @memcpy(str[0..input.len], input);
     }
 
-    str[input.len] = 0;
-
-    return @as([*:0]u8, @ptrCast(str));
+    return str;
 }
 
 fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) !beam.term {
@@ -102,9 +99,9 @@ pub fn parse_protobuf(query: []const u8) beam.term {
 
     validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
-    defer e.enif_free(query_str);
+    defer beam.allocator.free(query_str);
 
-    const result = c.pg_query_parse_protobuf(query_str);
+    const result = c.pg_query_parse_protobuf(query_str.ptr);
     defer c.pg_query_free_protobuf_parse_result(result);
 
     if (result.@"error" != null) {
@@ -158,9 +155,9 @@ pub fn fingerprint(query: []const u8) beam.term {
 
     validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
-    defer e.enif_free(query_str);
+    defer beam.allocator.free(query_str);
 
-    const result = c.pg_query_fingerprint(query_str);
+    const result = c.pg_query_fingerprint(query_str.ptr);
     defer c.pg_query_free_fingerprint_result(result);
 
     if (result.@"error" != null) {
@@ -185,9 +182,9 @@ pub fn scan(query: []const u8) beam.term {
 
     validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
-    defer e.enif_free(query_str);
+    defer beam.allocator.free(query_str);
 
-    const result = c.pg_query_scan(query_str);
+    const result = c.pg_query_scan(query_str.ptr);
     defer c.pg_query_free_scan_result(result);
 
     if (result.@"error" != null) {
@@ -206,9 +203,9 @@ pub fn normalize(query: []const u8) beam.term {
 
     validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
-    defer e.enif_free(query_str);
+    defer beam.allocator.free(query_str);
 
-    const result = c.pg_query_normalize(query_str);
+    const result = c.pg_query_normalize(query_str.ptr);
     defer c.pg_query_free_normalize_result(result);
 
     if (result.@"error" != null) {
