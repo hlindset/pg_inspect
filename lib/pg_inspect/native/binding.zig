@@ -11,6 +11,31 @@ extern fn pginspect_make_uint64(env: beam.env, value: u64) e.ErlNifTerm;
 const max_sql_length: usize = 16 * 1024 * 1024;
 const max_protobuf_length: usize = 32 * 1024 * 1024;
 
+fn atom(env: beam.env, name: [*:0]const u8) e.ErlNifTerm {
+    return e.enif_make_atom(env, name);
+}
+
+fn ok_term(env: beam.env, value: e.ErlNifTerm) beam.term {
+    return .{ .v = e.enif_make_tuple2(env, atom(env, "ok"), value) };
+}
+
+fn error_term(env: beam.env, value: e.ErlNifTerm) beam.term {
+    return .{ .v = e.enif_make_tuple2(env, atom(env, "error"), value) };
+}
+
+fn error_message(err: anyerror) []const u8 {
+    return switch (err) {
+        error.InputTooLarge => "input too large",
+        error.ContainsNullByte => "argument must not contain null bytes",
+        error.InputSizeTooLarge => "input size too large",
+        error.AllocationFailed => "memory allocation failed",
+        error.InvalidProtobufMessage => "invalid protobuf message format",
+        error.ErrorMapCreationFailed => "failed to create error map",
+        error.ResultMapCreationFailed => "failed to create result map",
+        else => "unexpected error",
+    };
+}
+
 fn make_binary(env: beam.env, bytes: []const u8) beam.term {
     var binary: e.ErlNifTerm = undefined;
     const data = e.enif_make_new_binary(env, bytes.len, &binary);
@@ -23,68 +48,41 @@ fn make_binary(env: beam.env, bytes: []const u8) beam.term {
 }
 
 fn make_error(env: beam.env, message: []const u8) beam.term {
-    return .{
-        .v = e.enif_make_tuple2(
-            env,
-            e.enif_make_atom(env, "error"),
-            make_binary(env, message).v,
-        ),
-    };
+    return error_term(env, make_binary(env, message).v);
 }
 
 fn make_success(env: beam.env, bytes: []const u8) beam.term {
-    return .{
-        .v = e.enif_make_tuple2(
-            env,
-            e.enif_make_atom(env, "ok"),
-            make_binary(env, bytes).v,
-        ),
-    };
+    return ok_term(env, make_binary(env, bytes).v);
 }
 
 fn c_string_slice(ptr: [*c]const u8) []const u8 {
     return std.mem.span(ptr);
 }
 
-fn binary_slice(binary: e.ErlNifBinary) []const u8 {
-    return binary.data[0..binary.size];
-}
-
 fn ptr_slice(ptr: [*c]const u8, len: usize) []const u8 {
     return ptr[0..len];
 }
 
-fn validate_input(
-    env: beam.env,
-    input: []const u8,
-    max_length: usize,
-) ?beam.term {
-    if (input.len > max_length) {
-        return make_error(env, "input too large");
-    }
-
-    return null;
+fn beam_error(env: beam.env, err: anyerror) beam.term {
+    return make_error(env, error_message(err));
 }
 
-fn mk_cstr(
-    env: beam.env,
-    input: []const u8,
-    error_term: *beam.term,
-) ?[*:0]u8 {
+fn validate_input(input: []const u8, max_length: usize) !void {
+    if (input.len > max_length) {
+        return error.InputTooLarge;
+    }
+}
+
+fn make_c_string(input: []const u8) ![*:0]u8 {
     if (std.mem.indexOfScalar(u8, input, 0) != null) {
-        error_term.* = make_error(env, "argument must not contain null bytes");
-        return null;
+        return error.ContainsNullByte;
     }
 
     if (input.len >= std.math.maxInt(usize) - 1) {
-        error_term.* = make_error(env, "input size too large");
-        return null;
+        return error.InputSizeTooLarge;
     }
 
-    const raw = e.enif_alloc(input.len + 1) orelse {
-        error_term.* = make_error(env, "memory allocation failed");
-        return null;
-    };
+    const raw = e.enif_alloc(input.len + 1) orelse return error.AllocationFailed;
 
     const str = @as([*]u8, @ptrCast(raw));
 
@@ -97,50 +95,46 @@ fn mk_cstr(
     return @as([*:0]u8, @ptrCast(str));
 }
 
-fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) beam.term {
+fn put_error_map_value(env: beam.env, map: *e.ErlNifTerm, key: [*:0]const u8, value: e.ErlNifTerm) !void {
+    if (e.enif_make_map_put(env, map.*, atom(env, key), value, map) == 0) {
+        return error.ErrorMapCreationFailed;
+    }
+}
+
+fn put_result_map_value(env: beam.env, map: *e.ErlNifTerm, key: [*:0]const u8, value: e.ErlNifTerm) !void {
+    if (e.enif_make_map_put(env, map.*, atom(env, key), value, map) == 0) {
+        return error.ResultMapCreationFailed;
+    }
+}
+
+fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) !beam.term {
     var error_map = e.enif_make_new_map(env);
     const message_binary = make_binary(env, c_string_slice(err[0].message));
 
-    if (e.enif_make_map_put(
+    try put_error_map_value(env, &error_map, "message", message_binary.v);
+    try put_error_map_value(
         env,
-        error_map,
-        e.enif_make_atom(env, "message"),
-        message_binary.v,
         &error_map,
-    ) == 0) {
-        return make_error(env, "failed to create error map");
-    }
-
-    if (e.enif_make_map_put(
-        env,
-        error_map,
-        e.enif_make_atom(env, "cursorpos"),
+        "cursorpos",
         e.enif_make_int(env, err[0].cursorpos - 1),
-        &error_map,
-    ) == 0) {
-        return make_error(env, "failed to create error map");
-    }
+    );
 
-    return .{ .v = e.enif_make_tuple2(env, e.enif_make_atom(env, "error"), error_map) };
+    return error_term(env, error_map);
 }
 
 /// Parses a SQL query into a serialized protobuf AST.
 pub fn parse_protobuf(query: []const u8) beam.term {
     const env = beam.context.env;
 
-    if (validate_input(env, query, max_sql_length)) |error_term| {
-        return error_term;
-    }
-
-    var error_term: beam.term = undefined;
-    const query_str = mk_cstr(env, query, &error_term) orelse return error_term;
+    validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
+    const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer e.enif_free(query_str);
 
     const result = c.pg_query_parse_protobuf(query_str);
     defer c.pg_query_free_protobuf_parse_result(result);
 
     if (result.@"error" != null) {
-        return create_parse_error_map(env, &result.@"error"[0]);
+        return create_parse_error_map(env, &result.@"error"[0]) catch |err| beam_error(env, err);
     }
 
     return make_success(
@@ -153,9 +147,7 @@ pub fn parse_protobuf(query: []const u8) beam.term {
 pub fn deparse_protobuf(input: []const u8) beam.term {
     const env = beam.context.env;
 
-    if (validate_input(env, input, max_protobuf_length)) |error_term| {
-        return error_term;
-    }
+    validate_input(input, max_protobuf_length) catch |err| return beam_error(env, err);
 
     const msg = c.pg_query__parse_result__unpack(null, input.len, input.ptr);
 
@@ -164,7 +156,7 @@ pub fn deparse_protobuf(input: []const u8) beam.term {
             c.pg_query__parse_result__free_unpacked(msg, null);
         }
 
-        return make_error(env, "invalid protobuf message format");
+        return beam_error(env, error.InvalidProtobufMessage);
     }
 
     c.pg_query__parse_result__free_unpacked(msg, null);
@@ -188,12 +180,8 @@ pub fn deparse_protobuf(input: []const u8) beam.term {
 pub fn fingerprint(query: []const u8) beam.term {
     const env = beam.context.env;
 
-    if (validate_input(env, query, max_sql_length)) |error_term| {
-        return error_term;
-    }
-
-    var error_term: beam.term = undefined;
-    const query_str = mk_cstr(env, query, &error_term) orelse return error_term;
+    validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
+    const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer e.enif_free(query_str);
 
     const result = c.pg_query_fingerprint(query_str);
@@ -206,46 +194,35 @@ pub fn fingerprint(query: []const u8) beam.term {
     var map = e.enif_make_new_map(env);
     const fingerprint_str = make_binary(env, c_string_slice(result.fingerprint_str));
 
-    if (e.enif_make_map_put(
+    put_result_map_value(
         env,
-        map,
-        e.enif_make_atom(env, "fingerprint"),
+        &map,
+        "fingerprint",
         pginspect_make_uint64(env, result.fingerprint),
-        &map,
-    ) == 0) {
-        return make_error(env, "failed to create result map");
-    }
-
-    if (e.enif_make_map_put(
+    ) catch |err| return beam_error(env, err);
+    put_result_map_value(
         env,
-        map,
-        e.enif_make_atom(env, "fingerprint_str"),
-        fingerprint_str.v,
         &map,
-    ) == 0) {
-        return make_error(env, "failed to create result map");
-    }
+        "fingerprint_str",
+        fingerprint_str.v,
+    ) catch |err| return beam_error(env, err);
 
-    return .{ .v = e.enif_make_tuple2(env, e.enif_make_atom(env, "ok"), map) };
+    return ok_term(env, map);
 }
 
 /// Scans SQL into libpg_query's protobuf token stream.
 pub fn scan(query: []const u8) beam.term {
     const env = beam.context.env;
 
-    if (validate_input(env, query, max_sql_length)) |error_term| {
-        return error_term;
-    }
-
-    var error_term: beam.term = undefined;
-    const query_str = mk_cstr(env, query, &error_term) orelse return error_term;
+    validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
+    const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer e.enif_free(query_str);
 
     const result = c.pg_query_scan(query_str);
     defer c.pg_query_free_scan_result(result);
 
     if (result.@"error" != null) {
-        return create_parse_error_map(env, &result.@"error"[0]);
+        return create_parse_error_map(env, &result.@"error"[0]) catch |err| beam_error(env, err);
     }
 
     return make_success(
@@ -258,12 +235,8 @@ pub fn scan(query: []const u8) beam.term {
 pub fn normalize(query: []const u8) beam.term {
     const env = beam.context.env;
 
-    if (validate_input(env, query, max_sql_length)) |error_term| {
-        return error_term;
-    }
-
-    var error_term: beam.term = undefined;
-    const query_str = mk_cstr(env, query, &error_term) orelse return error_term;
+    validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
+    const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer e.enif_free(query_str);
 
     const result = c.pg_query_normalize(query_str);
