@@ -33,10 +33,6 @@ fn c_string_slice(ptr: [*c]const u8) []const u8 {
     return std.mem.span(ptr);
 }
 
-fn ptr_slice(ptr: [*c]const u8, len: usize) []const u8 {
-    return ptr[0..len];
-}
-
 fn protobuf_message_valid(msg: *c.PgQuery__ParseResult) bool {
     return c.protobuf_c_message_check(&msg.*.base) != 0;
 }
@@ -76,7 +72,7 @@ fn make_c_string(input: []const u8) ![:0]u8 {
     return str;
 }
 
-fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) !beam.term {
+fn parse_error_term(env: beam.env, err: [*c]const c.PgQueryError) beam.term {
     return beam.make(
         .{
             .@"error",
@@ -87,10 +83,6 @@ fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) !beam.te
         },
         .{ .env = env },
     );
-}
-
-fn parse_error_term(env: beam.env, err: [*c]const c.PgQueryError) beam.term {
-    return create_parse_error_map(env, err) catch |create_err| beam_error(env, create_err);
 }
 
 /// Parses a SQL query into a serialized protobuf AST.
@@ -110,7 +102,7 @@ pub fn parse_protobuf(query: []const u8) beam.term {
 
     return ok_binary(
         env,
-        ptr_slice(@as([*c]const u8, @ptrCast(result.parse_tree.data)), result.parse_tree.len),
+        @as([*c]const u8, @ptrCast(result.parse_tree.data))[0..result.parse_tree.len],
     );
 }
 
@@ -193,7 +185,7 @@ pub fn scan(query: []const u8) beam.term {
 
     return ok_binary(
         env,
-        ptr_slice(@as([*c]const u8, @ptrCast(result.pbuf.data)), result.pbuf.len),
+        @as([*c]const u8, @ptrCast(result.pbuf.data))[0..result.pbuf.len],
     );
 }
 
