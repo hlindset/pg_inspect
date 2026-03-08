@@ -6,6 +6,9 @@ const c = @cImport({
     @cInclude("protobuf/pg_query.pb-c.h");
     @cInclude("protobuf-c/protobuf-c.h");
 });
+
+// Zig's imported Erlang NIF signature for enif_make_uint64 was not portable
+// across the precompile target matrix, so this C shim provides a stable call.
 extern fn pginspect_make_uint64(env: beam.env, value: u64) e.ErlNifTerm;
 
 const max_sql_length: usize = 16 * 1024 * 1024;
@@ -38,6 +41,9 @@ fn error_message(err: anyerror) []const u8 {
 
 fn make_binary(env: beam.env, bytes: []const u8) beam.term {
     var binary: e.ErlNifTerm = undefined;
+
+    // Allocate a BEAM-managed binary and copy the result into it so the term
+    // outlives any temporary C buffers returned by libpg_query.
     const data = e.enif_make_new_binary(env, bytes.len, &binary);
 
     if (bytes.len > 0) {
@@ -51,7 +57,7 @@ fn make_error(env: beam.env, message: []const u8) beam.term {
     return error_term(env, make_binary(env, message).v);
 }
 
-fn make_success(env: beam.env, bytes: []const u8) beam.term {
+fn ok_binary(env: beam.env, bytes: []const u8) beam.term {
     return ok_term(env, make_binary(env, bytes).v);
 }
 
@@ -61,6 +67,14 @@ fn c_string_slice(ptr: [*c]const u8) []const u8 {
 
 fn ptr_slice(ptr: [*c]const u8, len: usize) []const u8 {
     return ptr[0..len];
+}
+
+fn protobuf_message_valid(msg: *c.PgQuery__ParseResult) bool {
+    return c.protobuf_c_message_check(&msg.*.base) != 0;
+}
+
+fn pg_query_error_message(err: [*c]const c.PgQueryError) []const u8 {
+    return c_string_slice(err[0].message);
 }
 
 fn beam_error(env: beam.env, err: anyerror) beam.term {
@@ -82,6 +96,8 @@ fn make_c_string(input: []const u8) ![*:0]u8 {
         return error.InputSizeTooLarge;
     }
 
+    // libpg_query expects a mutable, NUL-terminated C string. We allocate it
+    // with enif_alloc so it can be released with enif_free in the caller.
     const raw = e.enif_alloc(input.len + 1) orelse return error.AllocationFailed;
 
     const str = @as([*]u8, @ptrCast(raw));
@@ -109,7 +125,7 @@ fn put_result_map_value(env: beam.env, map: *e.ErlNifTerm, key: [*:0]const u8, v
 
 fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) !beam.term {
     var error_map = e.enif_make_new_map(env);
-    const message_binary = make_binary(env, c_string_slice(err[0].message));
+    const message_binary = make_binary(env, pg_query_error_message(err));
 
     try put_error_map_value(env, &error_map, "message", message_binary.v);
     try put_error_map_value(
@@ -120,6 +136,10 @@ fn create_parse_error_map(env: beam.env, err: [*c]const c.PgQueryError) !beam.te
     );
 
     return error_term(env, error_map);
+}
+
+fn parse_error_term(env: beam.env, err: [*c]const c.PgQueryError) beam.term {
+    return create_parse_error_map(env, err) catch |create_err| beam_error(env, create_err);
 }
 
 /// Parses a SQL query into a serialized protobuf AST.
@@ -134,10 +154,10 @@ pub fn parse_protobuf(query: []const u8) beam.term {
     defer c.pg_query_free_protobuf_parse_result(result);
 
     if (result.@"error" != null) {
-        return create_parse_error_map(env, &result.@"error"[0]) catch |err| beam_error(env, err);
+        return parse_error_term(env, &result.@"error"[0]);
     }
 
-    return make_success(
+    return ok_binary(
         env,
         ptr_slice(@as([*c]const u8, @ptrCast(result.parse_tree.data)), result.parse_tree.len),
     );
@@ -149,31 +169,33 @@ pub fn deparse_protobuf(input: []const u8) beam.term {
 
     validate_input(input, max_protobuf_length) catch |err| return beam_error(env, err);
 
-    const msg = c.pg_query__parse_result__unpack(null, input.len, input.ptr);
+    // Unpack once purely as a validation step. libpg_query assumes the protobuf
+    // bytes are structurally valid and may misbehave on malformed input.
+    const msg = c.pg_query__parse_result__unpack(null, input.len, input.ptr) orelse
+        return beam_error(env, error.InvalidProtobufMessage);
 
-    if (msg == null or c.protobuf_c_message_check(&msg[0].base) == 0) {
-        if (msg != null) {
-            c.pg_query__parse_result__free_unpacked(msg, null);
-        }
+    // protobuf-c allocates the unpacked message tree; free it after the
+    // validation check. The actual libpg_query deparse entrypoint consumes the
+    // original serialized bytes below.
+    defer c.pg_query__parse_result__free_unpacked(msg, null);
 
+    if (!protobuf_message_valid(msg)) {
         return beam_error(env, error.InvalidProtobufMessage);
     }
 
-    c.pg_query__parse_result__free_unpacked(msg, null);
-
     const protobuf = c.PgQueryProtobuf{
         .len = input.len,
-        .data = @constCast(@ptrCast(input.ptr)),
+        .data = @ptrCast(@constCast(input.ptr)),
     };
 
     const result = c.pg_query_deparse_protobuf(protobuf);
     defer c.pg_query_free_deparse_result(result);
 
     if (result.@"error" != null) {
-        return make_error(env, c_string_slice(result.@"error"[0].message));
+        return make_error(env, pg_query_error_message(&result.@"error"[0]));
     }
 
-    return make_success(env, c_string_slice(result.query));
+    return ok_binary(env, c_string_slice(result.query));
 }
 
 /// Generates a fingerprint for a SQL query.
@@ -188,7 +210,7 @@ pub fn fingerprint(query: []const u8) beam.term {
     defer c.pg_query_free_fingerprint_result(result);
 
     if (result.@"error" != null) {
-        return make_error(env, c_string_slice(result.@"error"[0].message));
+        return make_error(env, pg_query_error_message(&result.@"error"[0]));
     }
 
     var map = e.enif_make_new_map(env);
@@ -222,10 +244,10 @@ pub fn scan(query: []const u8) beam.term {
     defer c.pg_query_free_scan_result(result);
 
     if (result.@"error" != null) {
-        return create_parse_error_map(env, &result.@"error"[0]) catch |err| beam_error(env, err);
+        return parse_error_term(env, &result.@"error"[0]);
     }
 
-    return make_success(
+    return ok_binary(
         env,
         ptr_slice(@as([*c]const u8, @ptrCast(result.pbuf.data)), result.pbuf.len),
     );
@@ -243,8 +265,8 @@ pub fn normalize(query: []const u8) beam.term {
     defer c.pg_query_free_normalize_result(result);
 
     if (result.@"error" != null) {
-        return make_error(env, c_string_slice(result.@"error"[0].message));
+        return make_error(env, pg_query_error_message(&result.@"error"[0]));
     }
 
-    return make_success(env, c_string_slice(result.normalized_query));
+    return ok_binary(env, c_string_slice(result.normalized_query));
 }
