@@ -66,6 +66,11 @@ static ERL_NIF_TERM make_success(ErlNifEnv *env, const unsigned char *data,
  */
 static char *mk_cstr(const ErlNifBinary *binary, ERL_NIF_TERM *error_term,
                      ErlNifEnv *env) {
+  if (memchr(binary->data, '\0', binary->size) != NULL) {
+    *error_term = make_error(env, "argument must not contain null bytes");
+    return NULL;
+  }
+
   // Check for overflow in size calculation
   if (binary->size >= SIZE_MAX - 1) {
     *error_term = make_error(env, "input size too large");
