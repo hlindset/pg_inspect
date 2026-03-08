@@ -3,6 +3,7 @@ defmodule PgInspect.Internal.AST do
 
   @type path_segment :: atom() | non_neg_integer()
   @type path :: [path_segment()]
+  @type reducible_root :: PgQuery.ParseResult.t() | PgQuery.Node.t()
 
   @type update_error ::
           {:index_out_of_bounds, integer()}
@@ -407,8 +408,16 @@ defmodule PgInspect.Internal.AST do
           }
   end
 
-  @spec reduce(term(), acc, (Visit.t(), acc -> acc), Analysis.t()) :: acc when acc: term()
-  def reduce(tree, acc, fun, analysis \\ %Analysis{}) when is_function(fun, 2) do
+  @spec reduce(reducible_root(), acc, (Visit.t(), acc -> acc), Analysis.t()) :: acc
+        when acc: term()
+  def reduce(tree, acc, fun, analysis \\ %Analysis{})
+
+  def reduce(%PgQuery.ParseResult{} = tree, acc, fun, analysis) when is_function(fun, 2) do
+    root_analysis = Analysis.enter_node(tree, analysis)
+    tree |> push_children([], root_analysis, :queue.new()) |> do_reduce(acc, fun)
+  end
+
+  def reduce(%PgQuery.Node{} = tree, acc, fun, analysis) when is_function(fun, 2) do
     root_analysis = Analysis.enter_node(tree, analysis)
     tree |> push_children([], root_analysis, :queue.new()) |> do_reduce(acc, fun)
   end
@@ -559,17 +568,13 @@ defmodule PgInspect.Internal.AST do
   defp children(_node), do: []
 
   defp field_defs(module) do
-    if function_exported?(module, :schema, 0) do
-      module.schema().fields
-      |> Map.values()
-      |> Enum.sort_by(& &1.tag)
-      |> Enum.filter(fn
-        %Protox.Field{type: {:message, _}} -> true
-        _ -> false
-      end)
-    else
-      []
-    end
+    module.schema().fields
+    |> Map.values()
+    |> Enum.sort_by(& &1.tag)
+    |> Enum.filter(fn
+      %Protox.Field{type: {:message, _}} -> true
+      _ -> false
+    end)
   end
 
   defp extract_field_value(struct, %Protox.Field{kind: {:oneof, oneof_field}, name: name}) do

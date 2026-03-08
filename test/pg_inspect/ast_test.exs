@@ -7,6 +7,14 @@ defmodule PgInspect.Internal.ASTTest do
   alias PgInspect.Protobuf
 
   describe "reduce/4" do
+    test "rejects non-AST roots" do
+      bad_root = struct(URI)
+
+      assert_raise FunctionClauseError, fn ->
+        apply(AST, :reduce, [bad_root, [], fn %Visit{path: path}, acc -> [path | acc] end])
+      end
+    end
+
     test "reports oneof paths and breadth-first traversal order" do
       root =
         %PgQuery.Node{
