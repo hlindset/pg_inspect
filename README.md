@@ -22,14 +22,14 @@ FreeBSD variants). A normal git checkout, like this repository, compiles from
 source so local development still works before a release is cut.
 
 `checksum.exs` is intentionally generated rather than checked in. Leave it as
-`[]` in the repository, then regenerate it after release artifacts are built and
-before publishing to Hex so the packaged tarball can verify and download the
-matching precompiled binaries.
+`[]` in the repository, then regenerate it from the published GitHub release
+artifacts before publishing to Hex so the packaged tarball can verify and
+download the matching precompiled binaries.
 
-To generate the file from scratch:
+To generate the file from the tagged GitHub release:
 
 ```sh
-MIX_ENV=prod mix precompile.checksum
+mix precompile.checksum --from-release
 ```
 
 To rewrite `checksum.exs` from artifacts already present in
@@ -38,6 +38,10 @@ To rewrite `checksum.exs` from artifacts already present in
 ```sh
 mix precompile.checksum --skip-precompile
 ```
+
+If the GitHub release is still a draft, export `GITHUB_TOKEN` or `GH_TOKEN`
+first so the checksum task can list and download the draft assets through the
+GitHub API.
 
 Windows precompilation is not wired into this repository yet because Zigler's
 `windows-msvc` targets require MSVC and Windows SDK environment variables in

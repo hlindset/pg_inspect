@@ -3,7 +3,7 @@ defmodule PgInspect.Native.Binding do
 
   @project_root Path.expand("../../..", __DIR__)
   @libpg_query_root Path.join(@project_root, "libpg_query")
-  @checksum_file Path.join(@project_root, "checksum.exs")
+  @checksum_file PgInspect.Native.Precompiled.checksum_file()
   @erlang_include_path Path.join([
                          to_string(:code.root_dir()),
                          "erts-#{:erlang.system_info(:version)}",
@@ -19,10 +19,7 @@ defmodule PgInspect.Native.Binding do
     Path.join(@libpg_query_root, "protobuf")
   ]
 
-  @precompiled_url [
-    "https://github.com/hlindset/pg_inspect/releases/download/v#VERSION/",
-    "Elixir.PgInspect.Native.Binding.#VERSION.#TRIPLE.#EXT"
-  ]
+  @precompiled_url PgInspect.Native.Precompiled.release_url_template()
 
   @precompiled_shas (if File.exists?(@checksum_file) do
                        @checksum_file
