@@ -14,11 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Elixir
-        uses: erlef/setup-beam@5304e04ea2b355f03681464e683d92e3b2f18451 # v1
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
         with:
-          elixir-version: "1.19.5"
-          otp-version: "28.4"
+          install_args: zig
       - name: Restore dependencies cache
         uses: actions/cache@v3
         with:
@@ -27,8 +26,6 @@ jobs:
           restore-keys: ${{ runner.os }}-mix-
       - name: Install dependencies
         run: mix deps.get
-      - name: Install Zig toolchain
-        run: mix zig.get
       - name: Run tests
         run: MIX_ENV=test mix test
       - name: Build precompiled Zigler artifacts
