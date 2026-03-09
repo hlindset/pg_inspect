@@ -86,6 +86,7 @@ defmodule PgInspect.MixProject do
       {:zigler, "~> 0.15.2", runtime: false},
       {:benchee, "~> 1.3", only: :dev, runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
+      {:req, "~> 0.5", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mix_test_watch, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},

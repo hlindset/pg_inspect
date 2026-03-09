@@ -39,6 +39,8 @@ defmodule Mix.Tasks.Precompile.Checksum do
 
   For draft GitHub releases, set `GITHUB_TOKEN` or `GH_TOKEN` so the task can
   list and download the assets through the GitHub API.
+
+  `--from-release` uses [`Req`](https://hex.pm/packages/req).
   """
 
   @switches [from_release: :boolean, repo: :string, skip_precompile: :boolean, tag: :string]
@@ -231,52 +233,6 @@ defmodule Mix.Tasks.Precompile.Checksum do
   defp default_headers, do: [{"user-agent", "pg_inspect-precompile-checksum"}]
 
   defp http_get!(url, headers) do
-    :inets.start()
-    :ssl.start()
-
-    request_headers =
-      Enum.map(headers, fn {key, value} ->
-        {String.to_charlist(key), String.to_charlist(value)}
-      end)
-
-    case :httpc.request(
-           :get,
-           {String.to_charlist(url), request_headers},
-           [
-             autoredirect: true,
-             ssl:
-               [
-                 depth: 100,
-                 customize_hostname_check: [
-                   match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
-                 ]
-               ] ++ ssl_opts()
-           ],
-           body_format: :binary
-         ) do
-      {:ok, {{_, 200, _}, _response_headers, body}} ->
-        body
-
-      {:ok, {{_, status, _}, _response_headers, body}} ->
-        Mix.raise("request to #{url} failed with status #{status}: #{inspect(body)}")
-
-      {:error, reason} ->
-        Mix.raise("request to #{url} failed: #{inspect(reason)}")
-    end
-  end
-
-  @otp_version :otp_release
-               |> :erlang.system_info()
-               |> List.to_integer()
-
-  if @otp_version >= 25 do
-    defp ssl_opts do
-      [
-        verify: :verify_peer,
-        cacerts: :public_key.cacerts_get()
-      ]
-    end
-  else
-    defp ssl_opts, do: []
+    Req.get!(url, headers: headers, raw: true).body
   end
 end
