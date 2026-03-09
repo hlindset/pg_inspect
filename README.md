@@ -21,6 +21,24 @@ Tagged releases publish precompiled Zigler artifacts for the supported
 FreeBSD variants). A normal git checkout, like this repository, compiles from
 source so local development still works before a release is cut.
 
+`checksum.exs` is intentionally generated rather than checked in. Leave it as
+`[]` in the repository, then regenerate it after release artifacts are built and
+before publishing to Hex so the packaged tarball can verify and download the
+matching precompiled binaries.
+
+To generate the file from scratch:
+
+```sh
+MIX_ENV=prod mix precompile.checksum
+```
+
+To rewrite `checksum.exs` from artifacts already present in
+`lib/pg_inspect/native/lib/`:
+
+```sh
+mix precompile.checksum --skip-precompile
+```
+
 Windows precompilation is not wired into this repository yet because Zigler's
 `windows-msvc` targets require MSVC and Windows SDK environment variables in
 CI.

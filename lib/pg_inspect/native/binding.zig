@@ -89,19 +89,6 @@ fn parse_error_term(env: beam.env, err: [*c]const c.PgQueryError) beam.term {
     );
 }
 
-fn fingerprint_result_term(env: beam.env, result: c.PgQueryFingerprintResult) beam.term {
-    return beam.make(
-        .{
-            .ok,
-            .{
-                .fingerprint = beam.term{ .v = pginspect_make_uint64(env, result.fingerprint) },
-                .fingerprint_str = c_string_slice(result.fingerprint_str),
-            },
-        },
-        .{ .env = env },
-    );
-}
-
 /// Parses a SQL query into a serialized protobuf AST.
 pub fn parse_protobuf(query: []const u8) beam.term {
     const env = beam.context.env;
@@ -173,7 +160,16 @@ pub fn fingerprint(query: []const u8) beam.term {
         return make_error(env, pg_query_error_message(&result.@"error"[0]));
     }
 
-    return fingerprint_result_term(env, result);
+    return beam.make(
+        .{
+            .ok,
+            .{
+                .fingerprint = beam.term{ .v = pginspect_make_uint64(env, result.fingerprint) },
+                .fingerprint_str = c_string_slice(result.fingerprint_str),
+            },
+        },
+        .{ .env = env },
+    );
 }
 
 /// Scans SQL into libpg_query's protobuf token stream.

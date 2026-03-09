@@ -1,4 +1,8 @@
 # Used by "mix format"
 [
-  inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"]
+  inputs: ~w[
+    {mix,.formatter}.exs
+    {config,lib,test}/**/*.{ex,exs,zig}
+  ],
+  plugins: [Zig.Formatter]
 ]

@@ -30,7 +30,7 @@ defmodule PgInspect.MixProject do
       links: %{
         "GitHub" => "https://github.com/hlindset/pg_inspect"
       },
-      files: ~w(lib libpg_query .formatter.exs mix.exs README* LICENSE*
+      files: ~w(lib libpg_query checksum.exs .formatter.exs mix.exs README* LICENSE*
         CHANGELOG*)
     ]
   end

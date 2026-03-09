@@ -18,7 +18,8 @@ defmodule PgInspect.PublicApiTest do
     end
 
     test "bang wrappers succeed for valid inputs" do
-      ast = PgInspect.parse!("WITH active_users AS (SELECT * FROM users) SELECT * FROM active_users")
+      ast =
+        PgInspect.parse!("WITH active_users AS (SELECT * FROM users) SELECT * FROM active_users")
 
       assert "WITH active_users AS (SELECT * FROM users) SELECT * FROM active_users" ==
                PgInspect.deparse!(ast)
