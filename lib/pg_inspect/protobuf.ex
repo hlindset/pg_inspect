@@ -9,10 +9,6 @@ defmodule PgInspect.Protobuf do
       {:ok, "SELECT * FROM users"}
   """
 
-  use Protox,
-    files: ["./libpg_query/protobuf/pg_query.proto"],
-    keep_unknown_fields: false
-
   @postgres_query_version 170_000
 
   @doc """
