@@ -59,13 +59,7 @@ defmodule PgInspect.Native.Binding do
         link_lib: [{:system, "pthread"}],
         src: @c_sources
       ],
-      nifs: [
-        parse_protobuf: [concurrency: :dirty_cpu],
-        deparse_protobuf: [concurrency: :dirty_cpu],
-        fingerprint: [concurrency: :dirty_cpu],
-        scan: [concurrency: :dirty_cpu],
-        normalize: [concurrency: :dirty_cpu]
-      ]
+      nifs: [:parse_protobuf, :deparse_protobuf, :fingerprint, :scan, :normalize]
   else
     use Zig,
       otp_app: :pg_inspect,
@@ -77,12 +71,6 @@ defmodule PgInspect.Native.Binding do
         link_lib: [{:system, "pthread"}],
         src: @c_sources
       ],
-      nifs: [
-        parse_protobuf: [concurrency: :dirty_cpu],
-        deparse_protobuf: [concurrency: :dirty_cpu],
-        fingerprint: [concurrency: :dirty_cpu],
-        scan: [concurrency: :dirty_cpu],
-        normalize: [concurrency: :dirty_cpu]
-      ]
+      nifs: [:parse_protobuf, :deparse_protobuf, :fingerprint, :scan, :normalize]
   end
 end
