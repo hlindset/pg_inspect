@@ -9,9 +9,9 @@ CFLAGS += -I$(LIBPG_QUERY_PATH) -fPIC
 
 ifdef ZIG_TARGET
 CC ?= zig cc -target $(ZIG_TARGET)
+else
+CC ?= zig cc
 endif
-
-CC ?= cc
 LIBPG_QUERY_AR = $(if $(filter zig,$(firstword $(CC))),zig ar rs,ar rs)
 
 LDFLAGS = -lpthread -shared

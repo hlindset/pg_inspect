@@ -23,7 +23,6 @@ defmodule PgInspect.MixProject do
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_executable: "make",
       make_makefile: "Makefile",
-      make_env: &make_env/0,
       make_precompiler: {:nif, CCPrecompiler},
       make_precompiler_url:
         "https://github.com/hlindset/pg_inspect/releases/download/v#{@version}/@{artefact_filename}",
@@ -108,18 +107,6 @@ defmodule PgInspect.MixProject do
       }
     ]
   end
-
-  defp make_env do
-    case {os_type(), System.get_env("CC")} do
-      {{:unix, :linux}, nil} ->
-        %{"CC" => "zig cc"}
-
-      _ ->
-        %{}
-    end
-  end
-
-  defp os_type, do: :os.type()
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
