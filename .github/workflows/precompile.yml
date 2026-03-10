@@ -11,18 +11,19 @@ permissions:
 
 jobs:
   precompile:
-    name: ${{ matrix.runner }} / Elixir ${{ matrix.pair.elixir }}
+    name: ${{ matrix.runner }} / Elixir ${{ matrix.elixir }}
     runs-on: ${{ matrix.runner }}
     env:
       MIX_ENV: "prod"
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, macos-latest]
-        pair:
-          - elixir: "1.19.5-otp-27"
-            otp: "27.3"
-          - elixir: "1.19.5-otp-28"
+        include:
+          - runner: ubuntu-latest
+            elixir: "1.19.5-otp-28"
+            otp: "28.4"
+          - runner: macos-latest
+            elixir: "1.19.5-otp-28"
             otp: "28.4"
     steps:
       - uses: actions/checkout@v4
@@ -31,8 +32,8 @@ jobs:
         with:
           mise_toml: |
             [tools]
-            elixir = "${{ matrix.pair.elixir }}"
-            erlang = "${{ matrix.pair.otp }}"
+            elixir = "${{ matrix.elixir }}"
+            erlang = "${{ matrix.otp }}"
             zig = "0.15.2"
             protoc = "latest"
       - name: Install Hex and Rebar
