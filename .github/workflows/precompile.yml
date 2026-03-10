@@ -11,13 +11,23 @@ permissions:
 
 jobs:
   precompile:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain with mise
         uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
         with:
           install_args: --env ci
+      - name: Print toolchain and system info
+        shell: bash
+        run: |
+          elixir --version
+          zig version
+          uname -a
+      - name: Install crash diagnostics tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdb
       - name: Restore dependencies cache
         uses: actions/cache@v3
         with:
@@ -27,9 +37,83 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
       - name: Run tests
-        run: MIX_ENV=test mix test
+        shell: bash
+        run: |
+          set -uo pipefail
+          sudo sysctl -w kernel.core_pattern="$PWD/core.%e.%p"
+          ulimit -c unlimited
+          export ERL_CRASH_DUMP="$PWD/erl_crash.test.dump"
+
+          set +e
+          MIX_ENV=test mix test
+          status=$?
+          set -e
+
+          if [ "$status" -eq 139 ]; then
+            echo "mix test exited with SIGSEGV"
+
+            if [ -f "$ERL_CRASH_DUMP" ]; then
+              echo "== erl_crash.dump =="
+              sed -n '1,240p' "$ERL_CRASH_DUMP" || true
+            fi
+
+            beam_smp="$(find "$(dirname "$(dirname "$(readlink -f "$(command -v erl)")")")" -path '*/erts-*/bin/beam.smp' -print -quit)"
+
+            if compgen -G "$PWD/core.*" > /dev/null; then
+              ls -lah "$PWD"/core.*
+
+              if [ -n "$beam_smp" ]; then
+                for core in "$PWD"/core.*; do
+                  echo "== gdb backtrace for ${core} =="
+                  gdb -batch -q "$beam_smp" "$core" \
+                    -ex 'set pagination off' \
+                    -ex 'thread apply all bt full' || true
+                done
+              fi
+            fi
+          fi
+
+          exit "$status"
       - name: Build precompiled Zigler artifacts
-        run: MIX_ENV=prod mix zig.precompile lib/pg_inspect/native/binding.ex
+        # `mix zig.precompile` cross-compiles Zigler's supported target matrix
+        # from this Linux runner and writes the release assets to `lib/.../lib/`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          sudo sysctl -w kernel.core_pattern="$PWD/core.%e.%p"
+          ulimit -c unlimited
+          export ERL_CRASH_DUMP="$PWD/erl_crash.precompile.dump"
+
+          set +e
+          MIX_ENV=prod mix zig.precompile lib/pg_inspect/native/binding.ex
+          status=$?
+          set -e
+
+          if [ "$status" -eq 139 ]; then
+            echo "mix zig.precompile exited with SIGSEGV"
+
+            if [ -f "$ERL_CRASH_DUMP" ]; then
+              echo "== erl_crash.dump =="
+              sed -n '1,240p' "$ERL_CRASH_DUMP" || true
+            fi
+
+            beam_smp="$(find "$(dirname "$(dirname "$(readlink -f "$(command -v erl)")")")" -path '*/erts-*/bin/beam.smp' -print -quit)"
+
+            if compgen -G "$PWD/core.*" > /dev/null; then
+              ls -lah "$PWD"/core.*
+
+              if [ -n "$beam_smp" ]; then
+                for core in "$PWD"/core.*; do
+                  echo "== gdb backtrace for ${core} =="
+                  gdb -batch -q "$beam_smp" "$core" \
+                    -ex 'set pagination off' \
+                    -ex 'thread apply all bt full' || true
+                done
+              fi
+            fi
+          fi
+
+          exit "$status"
       - uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
