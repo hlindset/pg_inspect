@@ -471,10 +471,10 @@ static ERL_NIF_TERM normalize(ErlNifEnv *env, int argc,
  * {:ok, result} | {:error, reason}
  */
 static ErlNifFunc funcs[] = {
-    {"parse_protobuf", 1, parse_protobuf, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"deparse_protobuf", 1, deparse_protobuf, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"scan", 1, scan, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"fingerprint", 1, fingerprint, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"normalize", 1, normalize, ERL_NIF_DIRTY_JOB_CPU_BOUND}};
+    {"parse_protobuf", 1, parse_protobuf},
+    {"deparse_protobuf", 1, deparse_protobuf},
+    {"scan", 1, scan},
+    {"fingerprint", 1, fingerprint},
+    {"normalize", 1, normalize}};
 
 ERL_NIF_INIT(Elixir.PgInspect.Native, funcs, NULL, NULL, NULL, NULL)

@@ -2,12 +2,18 @@ defmodule PgInspect.MixProject do
   use Mix.Project
 
   @version "0.1.0"
+  @zig_linux_targets [
+    "x86_64-linux-gnu",
+    "aarch64-linux-gnu",
+    "x86_64-linux-musl",
+    "aarch64-linux-musl"
+  ]
 
   def project do
     [
       app: :pg_inspect,
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
@@ -21,8 +27,9 @@ defmodule PgInspect.MixProject do
       make_precompiler_url:
         "https://github.com/hlindset/pg_inspect/releases/download/v#{@version}/@{artefact_filename}",
       make_precompiler_priv_paths: ["pg_inspect.*"],
-      make_precompiler_nif_versions: [versions: ["2.16", "2.17"]],
+      make_precompiler_nif_versions: [versions: ["2.17"]],
       make_precompiler_unavailable_target: :compile,
+      cc_precompiler: cc_precompiler(),
       # Docs
       name: "PgInspect",
       source_url: "https://github.com/hlindset/pg_inspect",
@@ -85,6 +92,19 @@ defmodule PgInspect.MixProject do
   def cli do
     [
       preferred_envs: preferred_cli_env()
+    ]
+  end
+
+  defp cc_precompiler do
+    [
+      cleanup: "precompile_clean",
+      compilers: %{
+        {:unix, :linux} =>
+          Enum.into(@zig_linux_targets, %{}, fn target ->
+            {target,
+             {"zig", "zig", "<%= cc %> cc -target #{target}", "<%= cxx %> c++ -target #{target}"}}
+          end)
+      }
     ]
   end
 
