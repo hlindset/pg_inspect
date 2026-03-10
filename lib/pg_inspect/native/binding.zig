@@ -6,6 +6,8 @@ const c = @cImport({
     @cInclude("protobuf/pg_query.pb-c.h");
     @cInclude("protobuf-c/protobuf-c.h");
 });
+
+var pg_query_mutex = std.Thread.Mutex{};
 // Zigler's generic u64 term encoding still resolves to a 32-bit c_ulong on
 // some cross targets, so this shim keeps fingerprint map construction portable.
 extern fn pginspect_make_uint64(env: beam.env, value: u64) e.ErlNifTerm;
@@ -97,6 +99,9 @@ pub fn parse_protobuf(query: []const u8) beam.term {
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer beam.allocator.free(query_str);
 
+    pg_query_mutex.lock();
+    defer pg_query_mutex.unlock();
+
     const result = c.pg_query_parse_protobuf(query_str.ptr);
     defer c.pg_query_free_protobuf_parse_result(result);
 
@@ -115,6 +120,9 @@ pub fn deparse_protobuf(input: []const u8) beam.term {
     const env = beam.context.env;
 
     validate_input(input, max_protobuf_length) catch |err| return beam_error(env, err);
+
+    pg_query_mutex.lock();
+    defer pg_query_mutex.unlock();
 
     // Unpack once purely as a validation step. libpg_query assumes the protobuf
     // bytes are structurally valid and may misbehave on malformed input.
@@ -153,6 +161,9 @@ pub fn fingerprint(query: []const u8) beam.term {
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer beam.allocator.free(query_str);
 
+    pg_query_mutex.lock();
+    defer pg_query_mutex.unlock();
+
     const result = c.pg_query_fingerprint(query_str.ptr);
     defer c.pg_query_free_fingerprint_result(result);
 
@@ -180,6 +191,9 @@ pub fn scan(query: []const u8) beam.term {
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer beam.allocator.free(query_str);
 
+    pg_query_mutex.lock();
+    defer pg_query_mutex.unlock();
+
     const result = c.pg_query_scan(query_str.ptr);
     defer c.pg_query_free_scan_result(result);
 
@@ -200,6 +214,9 @@ pub fn normalize(query: []const u8) beam.term {
     validate_input(query, max_sql_length) catch |err| return beam_error(env, err);
     const query_str = make_c_string(query) catch |err| return beam_error(env, err);
     defer beam.allocator.free(query_str);
+
+    pg_query_mutex.lock();
+    defer pg_query_mutex.unlock();
 
     const result = c.pg_query_normalize(query_str.ptr);
     defer c.pg_query_free_normalize_result(result);
