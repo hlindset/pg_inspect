@@ -33,9 +33,24 @@ static ERL_NIF_TERM make_error(ErlNifEnv *env, const char *message) {
   ERL_NIF_TERM binary;
   size_t message_len = strlen(message);
   unsigned char *binary_data = enif_make_new_binary(env, message_len, &binary);
+  if (binary_data == NULL) {
+    return enif_make_tuple2(env, enif_make_atom(env, "error"),
+                            enif_make_atom(env, "enomem"));
+  }
   memcpy(binary_data, message, message_len);
 
   return enif_make_tuple2(env, enif_make_atom(env, "error"), binary);
+}
+
+static bool make_binary_copy(ErlNifEnv *env, const unsigned char *data, size_t len,
+                             ERL_NIF_TERM *binary_term) {
+  unsigned char *binary_data = enif_make_new_binary(env, len, binary_term);
+  if (binary_data == NULL) {
+    return false;
+  }
+
+  memcpy(binary_data, data, len);
+  return true;
 }
 
 /**
@@ -49,8 +64,9 @@ static ERL_NIF_TERM make_error(ErlNifEnv *env, const char *message) {
 static ERL_NIF_TERM make_success(ErlNifEnv *env, const unsigned char *data,
                                  size_t len) {
   ERL_NIF_TERM binary;
-  unsigned char *binary_data = enif_make_new_binary(env, len, &binary);
-  memcpy(binary_data, data, len);
+  if (!make_binary_copy(env, data, len, &binary)) {
+    return make_error(env, "memory allocation failed");
+  }
 
   return enif_make_tuple2(env, enif_make_atom(env, "ok"), binary);
 }
@@ -142,9 +158,10 @@ static ERL_NIF_TERM create_parse_error_map(ErlNifEnv *env,
 
   // Create binary for error message
   size_t message_len = strlen(error->message);
-  unsigned char *message_data =
-      enif_make_new_binary(env, message_len, &message_binary);
-  memcpy(message_data, error->message, message_len);
+  if (!make_binary_copy(env, (unsigned char *)error->message, message_len,
+                        &message_binary)) {
+    return make_error(env, "memory allocation failed");
+  }
 
   // Add message binary to map
   if (!enif_make_map_put(env, error_map, enif_make_atom(env, "message"),
@@ -154,8 +171,9 @@ static ERL_NIF_TERM create_parse_error_map(ErlNifEnv *env,
   }
 
   // Add cursor position to map (zero-indexed)
+  int cursorpos = error->cursorpos > 0 ? error->cursorpos - 1 : 0;
   if (!enif_make_map_put(env, error_map, enif_make_atom(env, "cursorpos"),
-                         enif_make_int(env, error->cursorpos - 1),
+                         enif_make_int(env, cursorpos),
                          &error_map)) {
     DEBUG_LOG("Failed to add cursorpos to error map");
     return make_error(env, "failed to create error map");
@@ -327,9 +345,11 @@ static ERL_NIF_TERM fingerprint(ErlNifEnv *env, int argc,
       enif_make_uint64(env, (unsigned long long)result.fingerprint);
 
   // Convert fingerprint string
-  unsigned char *str_binary = enif_make_new_binary(
-      env, strlen(result.fingerprint_str), &fingerprint_str);
-  memcpy(str_binary, result.fingerprint_str, strlen(result.fingerprint_str));
+  if (!make_binary_copy(env, (unsigned char *)result.fingerprint_str,
+                        strlen(result.fingerprint_str), &fingerprint_str)) {
+    pg_query_free_fingerprint_result(result);
+    return make_error(env, "memory allocation failed");
+  }
 
   // Build the return map with both values
   if (!enif_make_map_put(env, map, enif_make_atom(env, "fingerprint"),

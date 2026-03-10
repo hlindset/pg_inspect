@@ -19,5 +19,23 @@ defmodule PgInspect.NativeTest do
       assert {:error, "argument must not contain null bytes"} ==
                PgInspect.Native.normalize(sql)
     end
+
+    test "returns zero-based cursor positions for parse errors" do
+      sql = "SELECT * FROM x WHERE y = ?"
+
+      assert {:error, %{message: message, cursorpos: 27}} =
+               PgInspect.Native.parse_protobuf(sql)
+
+      assert message =~ "syntax error"
+    end
+
+    test "returns zero-based cursor positions for scan errors" do
+      sql = <<39>>
+
+      assert {:error, %{message: message, cursorpos: 0}} =
+               PgInspect.Native.scan(sql)
+
+      assert message =~ "unterminated quoted string"
+    end
   end
 end
