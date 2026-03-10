@@ -23,4 +23,21 @@ defmodule PgInspect.Native.Precompiled do
   def artifact_prefix(version), do: "#{@module_prefix}.#{version}."
 
   def release_asset?(name, version), do: String.starts_with?(name, artifact_prefix(version))
+
+  def supported_targets do
+    [
+      {:aarch64, :freebsd, :none},
+      {:aarch64, :linux, :gnu},
+      {:aarch64, :linux, :musl},
+      {:aarch64, :macos, :none},
+      {:arm, :linux, :gnueabi},
+      {:arm, :linux, :gnueabihf},
+      {:arm, :linux, :musleabi},
+      {:arm, :linux, :musleabihf},
+      {:x86_64, :freebsd, :none},
+      {:x86_64, :linux, :gnu},
+      {:x86_64, :linux, :musl},
+      {:x86_64, :macos, :none}
+    ]
+  end
 end

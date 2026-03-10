@@ -75,8 +75,8 @@ jobs:
 
           exit "$status"
       - name: Build precompiled Zigler artifacts
-        # `mix zig.precompile` cross-compiles Zigler's supported target matrix
-        # from this Linux runner and writes the release assets to `lib/.../lib/`.
+        # `mix precompile.build` mirrors the pg_inspect-supported target matrix
+        # and writes the release assets to `lib/.../lib/`.
         shell: bash
         run: |
           set -uo pipefail
@@ -85,12 +85,12 @@ jobs:
           export ERL_CRASH_DUMP="$PWD/erl_crash.precompile.dump"
 
           set +e
-          MIX_ENV=prod mix zig.precompile lib/pg_inspect/native/binding.ex
+          MIX_ENV=prod mix precompile.build
           status=$?
           set -e
 
           if [ "$status" -eq 139 ]; then
-            echo "mix zig.precompile exited with SIGSEGV"
+            echo "mix precompile.build exited with SIGSEGV"
 
             if [ -f "$ERL_CRASH_DUMP" ]; then
               echo "== erl_crash.dump =="

@@ -9,8 +9,9 @@ defmodule Mix.Tasks.Precompile.Checksum do
   Writes the SHA256 sums for `PgInspect.Native.Binding` precompiled artifacts to
   `checksum.exs`.
 
-  By default the task rebuilds the local Zigler precompile matrix and hashes the
-  artifacts written to `lib/pg_inspect/native/lib/`.
+  By default the task rebuilds the local pg_inspect precompile matrix with
+  `mix precompile.build` and hashes the artifacts written to
+  `lib/pg_inspect/native/lib/`.
 
   Examples:
 
@@ -76,8 +77,8 @@ defmodule Mix.Tasks.Precompile.Checksum do
         :ok
 
       true ->
-        Mix.Task.reenable("zig.precompile")
-        Mix.Task.run("zig.precompile", [config.binding_file])
+        Mix.Task.reenable("precompile.build")
+        Mix.Task.run("precompile.build", [config.binding_file])
     end
   end
 

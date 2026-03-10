@@ -17,9 +17,9 @@ deparsing, fingerprinting, and normalization.
 Not published to Hex yet.
 
 Tagged releases publish precompiled Zigler artifacts for the supported
-`mix zig.precompile` target matrix on Zigler 0.15.2 (Linux, macOS, and
-FreeBSD variants). A normal git checkout, like this repository, compiles from
-source so local development still works before a release is cut.
+pg_inspect target matrix (Linux, macOS, and FreeBSD variants). A normal git
+checkout, like this repository, compiles from source so local development still
+works before a release is cut.
 
 `checksum.exs` is intentionally generated rather than checked in. Leave it as
 `[]` in the repository, then regenerate it from the published GitHub release
@@ -30,6 +30,12 @@ To generate the file from the tagged GitHub release:
 
 ```sh
 mix precompile.checksum --from-release
+```
+
+To build the supported release artifacts locally:
+
+```sh
+MIX_ENV=prod mix precompile.build
 ```
 
 To rewrite `checksum.exs` from artifacts already present in
@@ -43,9 +49,9 @@ If the GitHub release is still a draft, export `GITHUB_TOKEN` or `GH_TOKEN`
 first so the checksum task can list and download the draft assets through the
 GitHub API.
 
-Windows precompilation is not wired into this repository yet because Zigler's
-`windows-msvc` targets require MSVC and Windows SDK environment variables in
-CI.
+Windows precompilation is not wired into this repository yet because
+pg_inspect's vendored `libpg_query` sources do not cross-compile cleanly to
+Zigler's Windows targets.
 
 ## Usage
 
