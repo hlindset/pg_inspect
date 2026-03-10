@@ -28,7 +28,7 @@ defmodule PgInspect.MixProject do
       make_precompiler_url:
         "https://github.com/hlindset/pg_inspect/releases/download/v#{@version}/@{artefact_filename}",
       make_precompiler_priv_paths: ["pg_inspect.*"],
-      make_precompiler_nif_versions: [versions: ["2.16", "2.17"]],
+      make_precompiler_nif_versions: [versions: ["2.17"]],
       make_precompiler_unavailable_target: :compile,
       cc_precompiler: cc_precompiler(),
       # Docs
