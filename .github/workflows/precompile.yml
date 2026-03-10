@@ -25,7 +25,7 @@ jobs:
               elixir: "1.19.5-otp-27"
               otp: "27.3"
           - pair:
-              elixir: "1.20.0-rc.2-otp-28"
+              elixir: "1.20.0-rc.3-otp-28"
               otp: "28.4"
     steps:
       - uses: actions/checkout@v4
@@ -93,7 +93,7 @@ jobs:
               elixir: "1.19.5-otp-27"
               otp: "27.3"
           - pair:
-              elixir: "1.20.0-rc.2-otp-28"
+              elixir: "1.20.0-rc.3-otp-28"
               otp: "28.4"
     steps:
       - uses: actions/checkout@v4
