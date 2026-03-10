@@ -47,7 +47,7 @@ defmodule PgInspect.MixProject do
         "GitHub" => "https://github.com/hlindset/pg_inspect"
       },
       files: ~w(lib priv .formatter.exs mix.exs README* LICENSE*
-        CHANGELOG* src checksum.exs)
+        src checksum.exs)
     ]
   end
 
