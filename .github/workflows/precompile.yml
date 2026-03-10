@@ -20,11 +20,9 @@ jobs:
       matrix:
         runner: [ubuntu-latest, macos-latest]
         pair:
-          - elixir: "1.18.4-otp-27"
-            otp: "27.3"
           - elixir: "1.19.5-otp-27"
             otp: "27.3"
-          - elixir: "1.20.0-rc.3-otp-28"
+          - elixir: "1.19.5-otp-28"
             otp: "28.4"
     steps:
       - uses: actions/checkout@v4
