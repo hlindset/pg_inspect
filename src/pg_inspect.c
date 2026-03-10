@@ -22,6 +22,28 @@
 #define DEBUG_LOG(fmt, ...)
 #endif
 
+static ErlNifMutex *pg_query_mutex = NULL;
+
+static int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
+  (void)env;
+  (void)priv_data;
+  (void)load_info;
+
+  pg_query_mutex = enif_mutex_create("pg_inspect_pg_query_mutex");
+
+  return pg_query_mutex == NULL ? 1 : 0;
+}
+
+static void unload(ErlNifEnv *env, void *priv_data) {
+  (void)env;
+  (void)priv_data;
+
+  if (pg_query_mutex != NULL) {
+    enif_mutex_destroy(pg_query_mutex);
+    pg_query_mutex = NULL;
+  }
+}
+
 /**
  * Creates an error tuple of the form {:error, message}
  *
@@ -208,7 +230,9 @@ static ERL_NIF_TERM deparse_protobuf(ErlNifEnv *env, int argc,
                               .data = (char *)input_binary.data};
 
   DEBUG_LOG("Departing protobuf of size %zu", protobuf.len);
+  enif_mutex_lock(pg_query_mutex);
   PgQueryDeparseResult result = pg_query_deparse_protobuf(protobuf);
+  enif_mutex_unlock(pg_query_mutex);
 
   if (result.error != NULL) {
     DEBUG_LOG("Deparse error: %s", result.error->message);
@@ -255,7 +279,9 @@ static ERL_NIF_TERM parse_protobuf(ErlNifEnv *env, int argc,
 
   // Parse the query
   DEBUG_LOG("Parsing query of size %zu", query_binary.size);
+  enif_mutex_lock(pg_query_mutex);
   PgQueryProtobufParseResult result = pg_query_parse_protobuf(query_str);
+  enif_mutex_unlock(pg_query_mutex);
   enif_free(query_str);
 
   if (result.error != NULL) {
@@ -307,7 +333,9 @@ static ERL_NIF_TERM fingerprint(ErlNifEnv *env, int argc,
 
   // Calculate fingerprint
   DEBUG_LOG("Calculating fingerprint for query of size %zu", query_binary.size);
+  enif_mutex_lock(pg_query_mutex);
   PgQueryFingerprintResult result = pg_query_fingerprint(query_str);
+  enif_mutex_unlock(pg_query_mutex);
   enif_free(query_str); // Free the query string as we don't need it anymore
 
   if (result.error != NULL) {
@@ -382,7 +410,9 @@ static ERL_NIF_TERM scan(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
 
   // Scan the query
   DEBUG_LOG("Scanning query of size %zu", query_binary.size);
+  enif_mutex_lock(pg_query_mutex);
   PgQueryScanResult result = pg_query_scan(query_str);
+  enif_mutex_unlock(pg_query_mutex);
   enif_free(query_str); // Free the query string as we don't need it anymore
 
   if (result.error != NULL) {
@@ -433,7 +463,9 @@ static ERL_NIF_TERM normalize(ErlNifEnv *env, int argc,
 
   // Normalize the query
   DEBUG_LOG("Normalizing query of size %zu", query_binary.size);
+  enif_mutex_lock(pg_query_mutex);
   PgQueryNormalizeResult result = pg_query_normalize(query_str);
+  enif_mutex_unlock(pg_query_mutex);
   enif_free(query_str);
 
   if (result.error != NULL) {
@@ -477,4 +509,4 @@ static ErlNifFunc funcs[] = {
     {"fingerprint", 1, fingerprint, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"normalize", 1, normalize, ERL_NIF_DIRTY_JOB_CPU_BOUND}};
 
-ERL_NIF_INIT(Elixir.PgInspect.Native, funcs, NULL, NULL, NULL, NULL)
+ERL_NIF_INIT(Elixir.PgInspect.Native, funcs, load, NULL, NULL, unload)
