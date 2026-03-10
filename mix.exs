@@ -21,6 +21,7 @@ defmodule PgInspect.MixProject do
       description: description(),
       test_coverage: [tool: ExCoveralls],
       compilers: [:elixir_make] ++ Mix.compilers(),
+      aliases: aliases(),
       make_executable: "make",
       make_makefile: "Makefile",
       make_precompiler: {:nif, CCPrecompiler},
@@ -92,6 +93,14 @@ defmodule PgInspect.MixProject do
   def cli do
     [
       preferred_envs: preferred_cli_env()
+    ]
+  end
+
+  defp aliases do
+    [
+      "pg_inspect.proto.generate": [
+        "protox.generate --output-path=lib/pg_query.pb.ex --include-path=. libpg_query/protobuf/pg_query.proto"
+      ]
     ]
   end
 
